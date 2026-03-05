@@ -1,0 +1,10 @@
+{
+  "name": "design-polish",
+  "description": "Design reference-based polishing with WCAG accessibility checks. Trend search, Gap analysis, and improvement suggestions.",
+  "author": {
+    "name": "vp-k"
+  },
+  "repository": "https://github.com/vp-k/design-polish",
+  "skills": ["./skills/design-polish"],
+  "commands": ["./commands"]
+}

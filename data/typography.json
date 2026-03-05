@@ -1,0 +1,1048 @@
+[
+  {
+    "name": "Classic Elegant",
+    "keywords": "elegant, luxury, sophisticated, timeless, premium, editorial",
+    "category": "Serif + Sans",
+    "heading": "Playfair Display",
+    "body": "Inter",
+    "mood": "elegant, luxury, sophisticated, timeless, premium, editorial",
+    "bestFor": [
+      "Luxury brands",
+      "fashion",
+      "spa",
+      "beauty",
+      "editorial",
+      "magazines",
+      "high-end e-commerce"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Inter:wght@300;400;500;600;700|Playfair+Display:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Playfair Display', 'serif'], sans: ['Inter', 'sans-serif'] }",
+    "notes": "High contrast between elegant heading and clean body. Perfect for luxury/premium."
+  },
+  {
+    "name": "Modern Professional",
+    "keywords": "modern, professional, clean, corporate, friendly, approachable",
+    "category": "Sans + Sans",
+    "heading": "Poppins",
+    "body": "Open Sans",
+    "mood": "modern, professional, clean, corporate, friendly, approachable",
+    "bestFor": [
+      "SaaS",
+      "corporate sites",
+      "business apps",
+      "startups",
+      "professional services"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Open+Sans:wght@300;400;500;600;700|Poppins:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Poppins', 'sans-serif'], body: ['Open Sans', 'sans-serif'] }",
+    "notes": "Geometric Poppins for headings, humanist Open Sans for readability."
+  },
+  {
+    "name": "Tech Startup",
+    "keywords": "tech, startup, modern, innovative, bold, futuristic",
+    "category": "Sans + Sans",
+    "heading": "Space Grotesk",
+    "body": "DM Sans",
+    "mood": "tech, startup, modern, innovative, bold, futuristic",
+    "bestFor": [
+      "Tech companies",
+      "startups",
+      "SaaS",
+      "developer tools",
+      "AI products"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=DM+Sans:wght@400;500;700|Space+Grotesk:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Space Grotesk', 'sans-serif'], body: ['DM Sans', 'sans-serif'] }",
+    "notes": "Space Grotesk has unique character, DM Sans is highly readable."
+  },
+  {
+    "name": "Editorial Classic",
+    "keywords": "editorial, classic, literary, traditional, refined, bookish",
+    "category": "Serif + Serif",
+    "heading": "Cormorant Garamond",
+    "body": "Libre Baskerville",
+    "mood": "editorial, classic, literary, traditional, refined, bookish",
+    "bestFor": [
+      "Publishing",
+      "blogs",
+      "news sites",
+      "literary magazines",
+      "book covers"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Cormorant+Garamond:wght@400;500;600;700|Libre+Baskerville:wght@400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Libre+Baskerville:wght@400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Cormorant Garamond', 'serif'], body: ['Libre Baskerville', 'serif'] }",
+    "notes": "All-serif pairing for traditional editorial feel."
+  },
+  {
+    "name": "Minimal Swiss",
+    "keywords": "minimal, clean, swiss, functional, neutral, professional",
+    "category": "Sans + Sans",
+    "heading": "Inter",
+    "body": "Inter",
+    "mood": "minimal, clean, swiss, functional, neutral, professional",
+    "bestFor": [
+      "Dashboards",
+      "admin panels",
+      "documentation",
+      "enterprise apps",
+      "design systems"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Inter:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Inter', 'sans-serif'] }",
+    "notes": "Single font family with weight variations. Ultimate simplicity."
+  },
+  {
+    "name": "Playful Creative",
+    "keywords": "playful, friendly, fun, creative, warm, approachable",
+    "category": "Display + Sans",
+    "heading": "Fredoka",
+    "body": "Nunito",
+    "mood": "playful, friendly, fun, creative, warm, approachable",
+    "bestFor": [
+      "Children's apps",
+      "educational",
+      "gaming",
+      "creative tools",
+      "entertainment"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Fredoka:wght@400;500;600;700|Nunito:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Fredoka', 'sans-serif'], body: ['Nunito', 'sans-serif'] }",
+    "notes": "Rounded, friendly fonts perfect for playful UIs."
+  },
+  {
+    "name": "Bold Statement",
+    "keywords": "bold, impactful, strong, dramatic, modern, headlines",
+    "category": "Display + Sans",
+    "heading": "Bebas Neue",
+    "body": "Source Sans 3",
+    "mood": "bold, impactful, strong, dramatic, modern, headlines",
+    "bestFor": [
+      "Marketing sites",
+      "portfolios",
+      "agencies",
+      "event pages",
+      "sports"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Bebas+Neue|Source+Sans+3:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Bebas Neue', 'sans-serif'], body: ['Source Sans 3', 'sans-serif'] }",
+    "notes": "Bebas Neue for large headlines only. All-caps display font."
+  },
+  {
+    "name": "Wellness Calm",
+    "keywords": "calm, wellness, health, relaxing, natural, organic",
+    "category": "Serif + Sans",
+    "heading": "Lora",
+    "body": "Raleway",
+    "mood": "calm, wellness, health, relaxing, natural, organic",
+    "bestFor": [
+      "Health apps",
+      "wellness",
+      "spa",
+      "meditation",
+      "yoga",
+      "organic brands"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Lora:wght@400;500;600;700|Raleway:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Lora', 'serif'], sans: ['Raleway', 'sans-serif'] }",
+    "notes": "Lora's organic curves with Raleway's elegant simplicity."
+  },
+  {
+    "name": "Developer Mono",
+    "keywords": "code, developer, technical, precise, functional, hacker",
+    "category": "Mono + Sans",
+    "heading": "JetBrains Mono",
+    "body": "IBM Plex Sans",
+    "mood": "code, developer, technical, precise, functional, hacker",
+    "bestFor": [
+      "Developer tools",
+      "documentation",
+      "code editors",
+      "tech blogs",
+      "CLI apps"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=IBM+Plex+Sans:wght@300;400;500;600;700|JetBrains+Mono:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { mono: ['JetBrains Mono', 'monospace'], sans: ['IBM Plex Sans', 'sans-serif'] }",
+    "notes": "JetBrains for code, IBM Plex for UI. Developer-focused."
+  },
+  {
+    "name": "Retro Vintage",
+    "keywords": "retro, vintage, nostalgic, dramatic, decorative, bold",
+    "category": "Display + Serif",
+    "heading": "Abril Fatface",
+    "body": "Merriweather",
+    "mood": "retro, vintage, nostalgic, dramatic, decorative, bold",
+    "bestFor": [
+      "Vintage brands",
+      "breweries",
+      "restaurants",
+      "creative portfolios",
+      "posters"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Abril+Fatface|Merriweather:wght@300;400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Merriweather:wght@300;400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Abril Fatface', 'serif'], body: ['Merriweather', 'serif'] }",
+    "notes": "Abril Fatface for hero headlines only. High-impact vintage feel."
+  },
+  {
+    "name": "Geometric Modern",
+    "keywords": "geometric, modern, clean, balanced, contemporary, versatile",
+    "category": "Sans + Sans",
+    "heading": "Outfit",
+    "body": "Work Sans",
+    "mood": "geometric, modern, clean, balanced, contemporary, versatile",
+    "bestFor": [
+      "General purpose",
+      "portfolios",
+      "agencies",
+      "modern brands",
+      "landing pages"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Outfit:wght@300;400;500;600;700|Work+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Work+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Outfit', 'sans-serif'], body: ['Work Sans', 'sans-serif'] }",
+    "notes": "Both geometric but Outfit more distinctive for headings."
+  },
+  {
+    "name": "Luxury Serif",
+    "keywords": "luxury, high-end, fashion, elegant, refined, premium",
+    "category": "Serif + Sans",
+    "heading": "Cormorant",
+    "body": "Montserrat",
+    "mood": "luxury, high-end, fashion, elegant, refined, premium",
+    "bestFor": [
+      "Fashion brands",
+      "luxury e-commerce",
+      "jewelry",
+      "high-end services"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Cormorant:wght@400;500;600;700|Montserrat:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Cormorant:wght@400;500;600;700&family=Montserrat:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Cormorant', 'serif'], sans: ['Montserrat', 'sans-serif'] }",
+    "notes": "Cormorant's elegance with Montserrat's geometric precision."
+  },
+  {
+    "name": "Friendly SaaS",
+    "keywords": "friendly, modern, saas, clean, approachable, professional",
+    "category": "Sans + Sans",
+    "heading": "Plus Jakarta Sans",
+    "body": "Plus Jakarta Sans",
+    "mood": "friendly, modern, saas, clean, approachable, professional",
+    "bestFor": [
+      "SaaS products",
+      "web apps",
+      "dashboards",
+      "B2B",
+      "productivity tools"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Plus+Jakarta+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] }",
+    "notes": "Single versatile font. Modern alternative to Inter."
+  },
+  {
+    "name": "News Editorial",
+    "keywords": "news, editorial, journalism, trustworthy, readable, informative",
+    "category": "Serif + Sans",
+    "heading": "Newsreader",
+    "body": "Roboto",
+    "mood": "news, editorial, journalism, trustworthy, readable, informative",
+    "bestFor": [
+      "News sites",
+      "blogs",
+      "magazines",
+      "journalism",
+      "content-heavy sites"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Newsreader:wght@400;500;600;700|Roboto:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Newsreader:wght@400;500;600;700&family=Roboto:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Newsreader', 'serif'], sans: ['Roboto', 'sans-serif'] }",
+    "notes": "Newsreader designed for long-form reading. Roboto for UI."
+  },
+  {
+    "name": "Handwritten Charm",
+    "keywords": "handwritten, personal, friendly, casual, warm, charming",
+    "category": "Script + Sans",
+    "heading": "Caveat",
+    "body": "Quicksand",
+    "mood": "handwritten, personal, friendly, casual, warm, charming",
+    "bestFor": [
+      "Personal blogs",
+      "invitations",
+      "creative portfolios",
+      "lifestyle brands"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Caveat:wght@400;500;600;700|Quicksand:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=Quicksand:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { script: ['Caveat', 'cursive'], sans: ['Quicksand', 'sans-serif'] }",
+    "notes": "Use Caveat sparingly for accents. Quicksand for body."
+  },
+  {
+    "name": "Corporate Trust",
+    "keywords": "corporate, trustworthy, accessible, readable, professional, clean",
+    "category": "Sans + Sans",
+    "heading": "Lexend",
+    "body": "Source Sans 3",
+    "mood": "corporate, trustworthy, accessible, readable, professional, clean",
+    "bestFor": [
+      "Enterprise",
+      "government",
+      "healthcare",
+      "finance",
+      "accessibility-focused"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Lexend:wght@300;400;500;600;700|Source+Sans+3:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Lexend', 'sans-serif'], body: ['Source Sans 3', 'sans-serif'] }",
+    "notes": "Lexend designed for readability. Excellent accessibility."
+  },
+  {
+    "name": "Brutalist Raw",
+    "keywords": "brutalist, raw, technical, monospace, minimal, stark",
+    "category": "Mono + Mono",
+    "heading": "Space Mono",
+    "body": "Space Mono",
+    "mood": "brutalist, raw, technical, monospace, minimal, stark",
+    "bestFor": [
+      "Brutalist designs",
+      "developer portfolios",
+      "experimental",
+      "tech art"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Space+Mono:wght@400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { mono: ['Space Mono', 'monospace'] }",
+    "notes": "All-mono for raw brutalist aesthetic. Limited weights."
+  },
+  {
+    "name": "Fashion Forward",
+    "keywords": "fashion, avant-garde, creative, bold, artistic, edgy",
+    "category": "Sans + Sans",
+    "heading": "Syne",
+    "body": "Manrope",
+    "mood": "fashion, avant-garde, creative, bold, artistic, edgy",
+    "bestFor": [
+      "Fashion brands",
+      "creative agencies",
+      "art galleries",
+      "design studios"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Manrope:wght@300;400;500;600;700|Syne:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=Syne:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Syne', 'sans-serif'], body: ['Manrope', 'sans-serif'] }",
+    "notes": "Syne's unique character for headlines. Manrope for readability."
+  },
+  {
+    "name": "Soft Rounded",
+    "keywords": "soft, rounded, friendly, approachable, warm, gentle",
+    "category": "Sans + Sans",
+    "heading": "Varela Round",
+    "body": "Nunito Sans",
+    "mood": "soft, rounded, friendly, approachable, warm, gentle",
+    "bestFor": [
+      "Children's products",
+      "pet apps",
+      "friendly brands",
+      "wellness",
+      "soft UI"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Nunito+Sans:wght@300;400;500;600;700|Varela+Round",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;500;600;700&family=Varela+Round&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Varela Round', 'sans-serif'], body: ['Nunito Sans', 'sans-serif'] }",
+    "notes": "Both rounded and friendly. Perfect for soft UI designs."
+  },
+  {
+    "name": "Premium Sans",
+    "keywords": "premium, modern, clean, sophisticated, versatile, balanced",
+    "category": "Sans + Sans",
+    "heading": "Satoshi",
+    "body": "General Sans",
+    "mood": "premium, modern, clean, sophisticated, versatile, balanced",
+    "bestFor": [
+      "Premium brands",
+      "modern agencies",
+      "SaaS",
+      "portfolios",
+      "startups"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=DM+Sans:wght@400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['DM Sans', 'sans-serif'] }",
+    "notes": "Note: Satoshi/General Sans on Fontshare. DM Sans as Google alternative."
+  },
+  {
+    "name": "Vietnamese Friendly",
+    "keywords": "vietnamese, international, readable, clean, multilingual, accessible",
+    "category": "Sans + Sans",
+    "heading": "Be Vietnam Pro",
+    "body": "Noto Sans",
+    "mood": "vietnamese, international, readable, clean, multilingual, accessible",
+    "bestFor": [
+      "Vietnamese sites",
+      "multilingual apps",
+      "international products"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Be+Vietnam+Pro:wght@300;400;500;600;700|Noto+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&family=Noto+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Be Vietnam Pro', 'Noto Sans', 'sans-serif'] }",
+    "notes": "Be Vietnam Pro excellent Vietnamese support. Noto as fallback."
+  },
+  {
+    "name": "Japanese Elegant",
+    "keywords": "japanese, elegant, traditional, modern, multilingual, readable",
+    "category": "Serif + Sans",
+    "heading": "Noto Serif JP",
+    "body": "Noto Sans JP",
+    "mood": "japanese, elegant, traditional, modern, multilingual, readable",
+    "bestFor": [
+      "Japanese sites",
+      "Japanese restaurants",
+      "cultural sites",
+      "anime/manga"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Sans+JP:wght@300;400;500;700|Noto+Serif+JP:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Noto+Serif+JP:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Noto Serif JP', 'serif'], sans: ['Noto Sans JP', 'sans-serif'] }",
+    "notes": "Noto fonts excellent Japanese support. Traditional + modern feel."
+  },
+  {
+    "name": "Korean Modern",
+    "keywords": "korean, modern, clean, professional, multilingual, readable",
+    "category": "Sans + Sans",
+    "heading": "Noto Sans KR",
+    "body": "Noto Sans KR",
+    "mood": "korean, modern, clean, professional, multilingual, readable",
+    "bestFor": [
+      "Korean sites",
+      "K-beauty",
+      "K-pop",
+      "Korean businesses",
+      "multilingual"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Sans+KR:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Noto Sans KR', 'sans-serif'] }",
+    "notes": "Clean Korean typography. Single font with weight variations."
+  },
+  {
+    "name": "Chinese Traditional",
+    "keywords": "chinese, traditional, elegant, cultural, multilingual, readable",
+    "category": "Serif + Sans",
+    "heading": "Noto Serif TC",
+    "body": "Noto Sans TC",
+    "mood": "chinese, traditional, elegant, cultural, multilingual, readable",
+    "bestFor": [
+      "Traditional Chinese sites",
+      "cultural content",
+      "Taiwan/Hong Kong markets"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Sans+TC:wght@300;400;500;700|Noto+Serif+TC:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Noto+Serif+TC:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Noto Serif TC', 'serif'], sans: ['Noto Sans TC', 'sans-serif'] }",
+    "notes": "Traditional Chinese character support. Elegant pairing."
+  },
+  {
+    "name": "Chinese Simplified",
+    "keywords": "chinese, simplified, modern, professional, multilingual, readable",
+    "category": "Sans + Sans",
+    "heading": "Noto Sans SC",
+    "body": "Noto Sans SC",
+    "mood": "chinese, simplified, modern, professional, multilingual, readable",
+    "bestFor": [
+      "Simplified Chinese sites",
+      "mainland China market",
+      "business apps"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Sans+SC:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Noto Sans SC', 'sans-serif'] }",
+    "notes": "Simplified Chinese support. Clean modern look."
+  },
+  {
+    "name": "Arabic Elegant",
+    "keywords": "arabic, elegant, traditional, cultural, rtl, readable",
+    "category": "Serif + Sans",
+    "heading": "Noto Naskh Arabic",
+    "body": "Noto Sans Arabic",
+    "mood": "arabic, elegant, traditional, cultural, RTL, readable",
+    "bestFor": [
+      "Arabic sites",
+      "Middle East market",
+      "Islamic content",
+      "bilingual sites"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Naskh+Arabic:wght@400;500;600;700|Noto+Sans+Arabic:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Noto Naskh Arabic', 'serif'], sans: ['Noto Sans Arabic', 'sans-serif'] }",
+    "notes": "RTL support. Naskh for traditional, Sans for modern Arabic."
+  },
+  {
+    "name": "Thai Modern",
+    "keywords": "thai, modern, readable, clean, multilingual, accessible",
+    "category": "Sans + Sans",
+    "heading": "Noto Sans Thai",
+    "body": "Noto Sans Thai",
+    "mood": "thai, modern, readable, clean, multilingual, accessible",
+    "bestFor": [
+      "Thai sites",
+      "Southeast Asia",
+      "tourism",
+      "Thai restaurants"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Sans+Thai:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Noto Sans Thai', 'sans-serif'] }",
+    "notes": "Clean Thai typography. Excellent readability."
+  },
+  {
+    "name": "Hebrew Modern",
+    "keywords": "hebrew, modern, rtl, clean, professional, readable",
+    "category": "Sans + Sans",
+    "heading": "Noto Sans Hebrew",
+    "body": "Noto Sans Hebrew",
+    "mood": "hebrew, modern, RTL, clean, professional, readable",
+    "bestFor": [
+      "Hebrew sites",
+      "Israeli market",
+      "Jewish content",
+      "bilingual sites"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Noto+Sans+Hebrew:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Hebrew:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Noto Sans Hebrew', 'sans-serif'] }",
+    "notes": "RTL support. Clean modern Hebrew typography."
+  },
+  {
+    "name": "Legal Professional",
+    "keywords": "legal, professional, traditional, trustworthy, formal, authoritative",
+    "category": "Serif + Sans",
+    "heading": "EB Garamond",
+    "body": "Lato",
+    "mood": "legal, professional, traditional, trustworthy, formal, authoritative",
+    "bestFor": [
+      "Law firms",
+      "legal services",
+      "contracts",
+      "formal documents",
+      "government"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=EB+Garamond:wght@400;500;600;700|Lato:wght@300;400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:wght@400;500;600;700&family=Lato:wght@300;400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['EB Garamond', 'serif'], sans: ['Lato', 'sans-serif'] }",
+    "notes": "EB Garamond for authority. Lato for clean body text."
+  },
+  {
+    "name": "Medical Clean",
+    "keywords": "medical, clean, accessible, professional, healthcare, trustworthy",
+    "category": "Sans + Sans",
+    "heading": "Figtree",
+    "body": "Noto Sans",
+    "mood": "medical, clean, accessible, professional, healthcare, trustworthy",
+    "bestFor": [
+      "Healthcare",
+      "medical clinics",
+      "pharma",
+      "health apps",
+      "accessibility"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Figtree:wght@300;400;500;600;700|Noto+Sans:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&family=Noto+Sans:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Figtree', 'sans-serif'], body: ['Noto Sans', 'sans-serif'] }",
+    "notes": "Clean, accessible fonts for medical contexts."
+  },
+  {
+    "name": "Financial Trust",
+    "keywords": "financial, trustworthy, professional, corporate, banking, serious",
+    "category": "Sans + Sans",
+    "heading": "IBM Plex Sans",
+    "body": "IBM Plex Sans",
+    "mood": "financial, trustworthy, professional, corporate, banking, serious",
+    "bestFor": [
+      "Banks",
+      "finance",
+      "insurance",
+      "investment",
+      "fintech",
+      "enterprise"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=IBM+Plex+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['IBM Plex Sans', 'sans-serif'] }",
+    "notes": "IBM Plex conveys trust and professionalism. Excellent for data."
+  },
+  {
+    "name": "Real Estate Luxury",
+    "keywords": "real estate, luxury, elegant, sophisticated, property, premium",
+    "category": "Serif + Sans",
+    "heading": "Cinzel",
+    "body": "Josefin Sans",
+    "mood": "real estate, luxury, elegant, sophisticated, property, premium",
+    "bestFor": [
+      "Real estate",
+      "luxury properties",
+      "architecture",
+      "interior design"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Cinzel:wght@400;500;600;700|Josefin+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Josefin+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Cinzel', 'serif'], sans: ['Josefin Sans', 'sans-serif'] }",
+    "notes": "Cinzel's elegance for headlines. Josefin for modern body."
+  },
+  {
+    "name": "Restaurant Menu",
+    "keywords": "restaurant, menu, culinary, elegant, foodie, hospitality",
+    "category": "Serif + Sans",
+    "heading": "Playfair Display SC",
+    "body": "Karla",
+    "mood": "restaurant, menu, culinary, elegant, foodie, hospitality",
+    "bestFor": [
+      "Restaurants",
+      "cafes",
+      "food blogs",
+      "culinary",
+      "hospitality"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Karla:wght@300;400;500;600;700|Playfair+Display+SC:wght@400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Karla:wght@300;400;500;600;700&family=Playfair+Display+SC:wght@400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Playfair Display SC', 'serif'], sans: ['Karla', 'sans-serif'] }",
+    "notes": "Small caps Playfair for menu headers. Karla for descriptions."
+  },
+  {
+    "name": "Art Deco",
+    "keywords": "art deco, vintage, 1920s, elegant, decorative, gatsby",
+    "category": "Display + Sans",
+    "heading": "Poiret One",
+    "body": "Didact Gothic",
+    "mood": "art deco, vintage, 1920s, elegant, decorative, gatsby",
+    "bestFor": [
+      "Vintage events",
+      "art deco themes",
+      "luxury hotels",
+      "classic cocktails"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Didact+Gothic|Poiret+One",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Didact+Gothic&family=Poiret+One&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Poiret One', 'sans-serif'], sans: ['Didact Gothic', 'sans-serif'] }",
+    "notes": "Poiret One for art deco headlines only. Didact for body."
+  },
+  {
+    "name": "Magazine Style",
+    "keywords": "magazine, editorial, publishing, refined, journalism, print",
+    "category": "Serif + Sans",
+    "heading": "Libre Bodoni",
+    "body": "Public Sans",
+    "mood": "magazine, editorial, publishing, refined, journalism, print",
+    "bestFor": [
+      "Magazines",
+      "online publications",
+      "editorial content",
+      "journalism"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Libre+Bodoni:wght@400;500;600;700|Public+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Libre+Bodoni:wght@400;500;600;700&family=Public+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Libre Bodoni', 'serif'], sans: ['Public Sans', 'sans-serif'] }",
+    "notes": "Bodoni's editorial elegance. Public Sans for clean UI."
+  },
+  {
+    "name": "Crypto/Web3",
+    "keywords": "crypto, web3, futuristic, tech, blockchain, digital",
+    "category": "Sans + Sans",
+    "heading": "Orbitron",
+    "body": "Exo 2",
+    "mood": "crypto, web3, futuristic, tech, blockchain, digital",
+    "bestFor": [
+      "Crypto platforms",
+      "NFT",
+      "blockchain",
+      "web3",
+      "futuristic tech"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Exo+2:wght@300;400;500;600;700|Orbitron:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Orbitron', 'sans-serif'], body: ['Exo 2', 'sans-serif'] }",
+    "notes": "Orbitron for futuristic headers. Exo 2 for readable body."
+  },
+  {
+    "name": "Gaming Bold",
+    "keywords": "gaming, bold, action, esports, competitive, energetic",
+    "category": "Display + Sans",
+    "heading": "Russo One",
+    "body": "Chakra Petch",
+    "mood": "gaming, bold, action, esports, competitive, energetic",
+    "bestFor": [
+      "Gaming",
+      "esports",
+      "action games",
+      "competitive sports",
+      "entertainment"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Chakra+Petch:wght@300;400;500;600;700|Russo+One",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;500;600;700&family=Russo+One&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Russo One', 'sans-serif'], body: ['Chakra Petch', 'sans-serif'] }",
+    "notes": "Russo One for impact. Chakra Petch for techy body text."
+  },
+  {
+    "name": "Indie/Craft",
+    "keywords": "indie, craft, handmade, artisan, organic, creative",
+    "category": "Display + Sans",
+    "heading": "Amatic SC",
+    "body": "Cabin",
+    "mood": "indie, craft, handmade, artisan, organic, creative",
+    "bestFor": [
+      "Craft brands",
+      "indie products",
+      "artisan",
+      "handmade",
+      "organic products"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Amatic+SC:wght@400;700|Cabin:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Amatic+SC:wght@400;700&family=Cabin:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Amatic SC', 'sans-serif'], sans: ['Cabin', 'sans-serif'] }",
+    "notes": "Amatic for handwritten feel. Cabin for readable body."
+  },
+  {
+    "name": "Startup Bold",
+    "keywords": "startup, bold, modern, innovative, confident, dynamic",
+    "category": "Sans + Sans",
+    "heading": "Clash Display",
+    "body": "Satoshi",
+    "mood": "startup, bold, modern, innovative, confident, dynamic",
+    "bestFor": [
+      "Startups",
+      "pitch decks",
+      "product launches",
+      "bold brands"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Outfit:wght@400;500;600;700|Rubik:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Rubik:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Outfit', 'sans-serif'], body: ['Rubik', 'sans-serif'] }",
+    "notes": "Note: Clash Display on Fontshare. Outfit as Google alternative."
+  },
+  {
+    "name": "E-commerce Clean",
+    "keywords": "ecommerce, clean, shopping, product, retail, conversion",
+    "category": "Sans + Sans",
+    "heading": "Rubik",
+    "body": "Nunito Sans",
+    "mood": "ecommerce, clean, shopping, product, retail, conversion",
+    "bestFor": [
+      "E-commerce",
+      "online stores",
+      "product pages",
+      "retail",
+      "shopping"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Nunito+Sans:wght@300;400;500;600;700|Rubik:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;500;600;700&family=Rubik:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Rubik', 'sans-serif'], body: ['Nunito Sans', 'sans-serif'] }",
+    "notes": "Clean readable fonts perfect for product descriptions."
+  },
+  {
+    "name": "Academic/Research",
+    "keywords": "academic, research, scholarly, accessible, readable, educational",
+    "category": "Serif + Sans",
+    "heading": "Crimson Pro",
+    "body": "Atkinson Hyperlegible",
+    "mood": "academic, research, scholarly, accessible, readable, educational",
+    "bestFor": [
+      "Universities",
+      "research papers",
+      "academic journals",
+      "educational"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Atkinson+Hyperlegible:wght@400;700|Crimson+Pro:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Crimson+Pro:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Crimson Pro', 'serif'], sans: ['Atkinson Hyperlegible', 'sans-serif'] }",
+    "notes": "Crimson for scholarly headlines. Atkinson for accessibility."
+  },
+  {
+    "name": "Dashboard Data",
+    "keywords": "dashboard, data, analytics, code, technical, precise",
+    "category": "Mono + Sans",
+    "heading": "Fira Code",
+    "body": "Fira Sans",
+    "mood": "dashboard, data, analytics, code, technical, precise",
+    "bestFor": [
+      "Dashboards",
+      "analytics",
+      "data visualization",
+      "admin panels"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Fira+Code:wght@400;500;600;700|Fira+Sans:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { mono: ['Fira Code', 'monospace'], sans: ['Fira Sans', 'sans-serif'] }",
+    "notes": "Fira family cohesion. Code for data, Sans for labels."
+  },
+  {
+    "name": "Music/Entertainment",
+    "keywords": "music, entertainment, fun, energetic, bold, performance",
+    "category": "Display + Sans",
+    "heading": "Righteous",
+    "body": "Poppins",
+    "mood": "music, entertainment, fun, energetic, bold, performance",
+    "bestFor": [
+      "Music platforms",
+      "entertainment",
+      "events",
+      "festivals",
+      "performers"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Poppins:wght@300;400;500;600;700|Righteous",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Righteous&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Righteous', 'sans-serif'], sans: ['Poppins', 'sans-serif'] }",
+    "notes": "Righteous for bold entertainment headers. Poppins for body."
+  },
+  {
+    "name": "Minimalist Portfolio",
+    "keywords": "minimal, portfolio, designer, creative, clean, artistic",
+    "category": "Sans + Sans",
+    "heading": "Archivo",
+    "body": "Space Grotesk",
+    "mood": "minimal, portfolio, designer, creative, clean, artistic",
+    "bestFor": [
+      "Design portfolios",
+      "creative professionals",
+      "minimalist brands"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Archivo:wght@300;400;500;600;700|Space+Grotesk:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { heading: ['Space Grotesk', 'sans-serif'], body: ['Archivo', 'sans-serif'] }",
+    "notes": "Space Grotesk for distinctive headers. Archivo for clean body."
+  },
+  {
+    "name": "Kids/Education",
+    "keywords": "kids, education, playful, friendly, colorful, learning",
+    "category": "Display + Sans",
+    "heading": "Baloo 2",
+    "body": "Comic Neue",
+    "mood": "kids, education, playful, friendly, colorful, learning",
+    "bestFor": [
+      "Children's apps",
+      "educational games",
+      "kid-friendly content"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Baloo+2:wght@400;500;600;700|Comic+Neue:wght@300;400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;500;600;700&family=Comic+Neue:wght@300;400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Baloo 2', 'sans-serif'], sans: ['Comic Neue', 'sans-serif'] }",
+    "notes": "Fun, playful fonts for children. Comic Neue is readable comic style."
+  },
+  {
+    "name": "Wedding/Romance",
+    "keywords": "wedding, romance, elegant, script, invitation, feminine",
+    "category": "Script + Serif",
+    "heading": "Great Vibes",
+    "body": "Cormorant Infant",
+    "mood": "wedding, romance, elegant, script, invitation, feminine",
+    "bestFor": [
+      "Wedding sites",
+      "invitations",
+      "romantic brands",
+      "bridal"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Cormorant+Infant:wght@300;400;500;600;700|Great+Vibes",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Cormorant+Infant:wght@300;400;500;600;700&family=Great+Vibes&display=swap');",
+    "tailwindConfig": "fontFamily: { script: ['Great Vibes', 'cursive'], serif: ['Cormorant Infant', 'serif'] }",
+    "notes": "Great Vibes for elegant accents. Cormorant for readable text."
+  },
+  {
+    "name": "Science/Tech",
+    "keywords": "science, technology, research, data, futuristic, precise",
+    "category": "Sans + Sans",
+    "heading": "Exo",
+    "body": "Roboto Mono",
+    "mood": "science, technology, research, data, futuristic, precise",
+    "bestFor": [
+      "Science",
+      "research",
+      "tech documentation",
+      "data-heavy sites"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Exo:wght@300;400;500;600;700|Roboto+Mono:wght@300;400;500;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Exo:wght@300;400;500;600;700&family=Roboto+Mono:wght@300;400;500;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Exo', 'sans-serif'], mono: ['Roboto Mono', 'monospace'] }",
+    "notes": "Exo for modern tech feel. Roboto Mono for code/data."
+  },
+  {
+    "name": "Accessibility First",
+    "keywords": "accessible, readable, inclusive, wcag, dyslexia-friendly, clear",
+    "category": "Sans + Sans",
+    "heading": "Atkinson Hyperlegible",
+    "body": "Atkinson Hyperlegible",
+    "mood": "accessible, readable, inclusive, WCAG, dyslexia-friendly, clear",
+    "bestFor": [
+      "Accessibility-critical sites",
+      "government",
+      "healthcare",
+      "inclusive design"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Atkinson+Hyperlegible:wght@400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Atkinson Hyperlegible', 'sans-serif'] }",
+    "notes": "Designed for maximum legibility. Excellent for accessibility."
+  },
+  {
+    "name": "Sports/Fitness",
+    "keywords": "sports, fitness, athletic, energetic, condensed, action",
+    "category": "Sans + Sans",
+    "heading": "Barlow Condensed",
+    "body": "Barlow",
+    "mood": "sports, fitness, athletic, energetic, condensed, action",
+    "bestFor": [
+      "Sports",
+      "fitness",
+      "gyms",
+      "athletic brands",
+      "competition"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Barlow+Condensed:wght@400;500;600;700|Barlow:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Barlow:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Barlow Condensed', 'sans-serif'], body: ['Barlow', 'sans-serif'] }",
+    "notes": "Condensed for impact headlines. Regular Barlow for body."
+  },
+  {
+    "name": "Luxury Minimalist",
+    "keywords": "luxury, minimalist, high-end, sophisticated, refined, premium",
+    "category": "Serif + Sans",
+    "heading": "Bodoni Moda",
+    "body": "Jost",
+    "mood": "luxury, minimalist, high-end, sophisticated, refined, premium",
+    "bestFor": [
+      "Luxury minimalist brands",
+      "high-end fashion",
+      "premium products"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Bodoni+Moda:wght@400;500;600;700|Jost:wght@300;400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:wght@400;500;600;700&family=Jost:wght@300;400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { serif: ['Bodoni Moda', 'serif'], sans: ['Jost', 'sans-serif'] }",
+    "notes": "Bodoni's high contrast elegance. Jost for geometric body."
+  },
+  {
+    "name": "Tech/HUD Mono",
+    "keywords": "tech, futuristic, hud, sci-fi, data, monospaced, precise",
+    "category": "Mono + Mono",
+    "heading": "Share Tech Mono",
+    "body": "Fira Code",
+    "mood": "tech, futuristic, hud, sci-fi, data, monospaced, precise",
+    "bestFor": [
+      "Sci-fi interfaces",
+      "developer tools",
+      "cybersecurity",
+      "dashboards"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Fira+Code:wght@300;400;500;600;700|Share+Tech+Mono",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');",
+    "tailwindConfig": "fontFamily: { hud: ['Share Tech Mono', 'monospace'], code: ['Fira Code', 'monospace'] }",
+    "notes": "Share Tech Mono has that classic sci-fi look."
+  },
+  {
+    "name": "Pixel Retro",
+    "keywords": "pixel, retro, gaming, 8-bit, nostalgic, arcade",
+    "category": "Display + Sans",
+    "heading": "Press Start 2P",
+    "body": "VT323",
+    "mood": "pixel, retro, gaming, 8-bit, nostalgic, arcade",
+    "bestFor": [
+      "Pixel art games",
+      "retro websites",
+      "creative portfolios"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Press+Start+2P|VT323",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');",
+    "tailwindConfig": "fontFamily: { pixel: ['Press Start 2P', 'cursive'], terminal: ['VT323', 'monospace'] }",
+    "notes": "Press Start 2P is very wide/large. VT323 is better for body text."
+  },
+  {
+    "name": "Neubrutalist Bold",
+    "keywords": "bold, neubrutalist, loud, strong, geometric, quirky",
+    "category": "Display + Sans",
+    "heading": "Lexend Mega",
+    "body": "Public Sans",
+    "mood": "bold, neubrutalist, loud, strong, geometric, quirky",
+    "bestFor": [
+      "Neubrutalist designs",
+      "Gen Z brands",
+      "bold marketing"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Lexend+Mega:wght@100..900|Public+Sans:wght@100..900",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Lexend+Mega:wght@100..900&family=Public+Sans:wght@100..900&display=swap');",
+    "tailwindConfig": "fontFamily: { mega: ['Lexend Mega', 'sans-serif'], body: ['Public Sans', 'sans-serif'] }",
+    "notes": "Lexend Mega has distinct character and variable weight."
+  },
+  {
+    "name": "Academic/Archival",
+    "keywords": "academic, old-school, university, research, serious, traditional",
+    "category": "Serif + Serif",
+    "heading": "EB Garamond",
+    "body": "Crimson Text",
+    "mood": "academic, old-school, university, research, serious, traditional",
+    "bestFor": [
+      "University sites",
+      "archives",
+      "research papers",
+      "history"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Crimson+Text:wght@400;600;700|EB+Garamond:wght@400;500;600;700;800",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600;700&family=EB+Garamond:wght@400;500;600;700;800&display=swap');",
+    "tailwindConfig": "fontFamily: { classic: ['EB Garamond', 'serif'], text: ['Crimson Text', 'serif'] }",
+    "notes": "Classic academic aesthetic. Very legible."
+  },
+  {
+    "name": "Spatial Clear",
+    "keywords": "spatial, legible, glass, system, clean, neutral",
+    "category": "Sans + Sans",
+    "heading": "Inter",
+    "body": "Inter",
+    "mood": "spatial, legible, glass, system, clean, neutral",
+    "bestFor": [
+      "Spatial computing",
+      "AR/VR",
+      "glassmorphism interfaces"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Inter:wght@300;400;500;600",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');",
+    "tailwindConfig": "fontFamily: { sans: ['Inter', 'sans-serif'] }",
+    "notes": "Optimized for readability on dynamic backgrounds."
+  },
+  {
+    "name": "Kinetic Motion",
+    "keywords": "kinetic, motion, futuristic, speed, wide, tech",
+    "category": "Display + Mono",
+    "heading": "Syncopate",
+    "body": "Space Mono",
+    "mood": "kinetic, motion, futuristic, speed, wide, tech",
+    "bestFor": [
+      "Music festivals",
+      "automotive",
+      "high-energy brands"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Space+Mono:wght@400;700|Syncopate:wght@400;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syncopate:wght@400;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Syncopate', 'sans-serif'], mono: ['Space Mono', 'monospace'] }",
+    "notes": "Syncopate's wide stance works well with motion effects."
+  },
+  {
+    "name": "Gen Z Brutal",
+    "keywords": "brutal, loud, shouty, meme, internet, bold",
+    "category": "Display + Sans",
+    "heading": "Anton",
+    "body": "Epilogue",
+    "mood": "brutal, loud, shouty, meme, internet, bold",
+    "bestFor": [
+      "Gen Z marketing",
+      "streetwear",
+      "viral campaigns"
+    ],
+    "googleFontsUrl": "https://fonts.google.com/share?selection.family=Anton|Epilogue:wght@400;500;600;700",
+    "cssImport": "@import url('https://fonts.googleapis.com/css2?family=Anton&family=Epilogue:wght@400;500;600;700&display=swap');",
+    "tailwindConfig": "fontFamily: { display: ['Anton', 'sans-serif'], body: ['Epilogue', 'sans-serif'] }",
+    "notes": "Anton is impactful and condensed. Good for stickers/badges."
+  }
+]
