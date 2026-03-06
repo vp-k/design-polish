@@ -1,7 +1,16 @@
-# design-polish v2.0
+# design-polish v2.1
 
-Claude Code plugin for design intelligence-driven polishing.
+[한국어](README.ko.md)
+
+Claude Code plugin for design intelligence-driven polishing and full renewal.
 Combines built-in design knowledge base + visual comparison + WCAG accessibility checks + trend search.
+
+## Commands
+
+| Command | Description | Scope |
+|---------|-------------|-------|
+| `/design-polish` | CSS corrections, spacing fixes, hover/focus refinements | Low risk (non-destructive) |
+| `/design-renewal` | Full design system replacement — palette, typography, tokens | High risk (large-scale changes) |
 
 ## Features
 
@@ -34,12 +43,15 @@ design-polish/
 ├── scripts/
 │   ├── capture.cjs               # Puppeteer screenshot + axe-core
 │   └── search.cjs                # BM25 search engine (Node.js)
-├── skills/design-polish/
-│   └── SKILL.md                  # Skill specification
+├── skills/
+│   ├── design-polish/SKILL.md    # Polish skill spec
+│   └── design-renewal/SKILL.md   # Renewal skill spec
 ├── commands/
-│   └── design-polish.md          # Command definition
+│   ├── design-polish.md          # Polish command
+│   └── design-renewal.md         # Renewal command
 ├── package.json
-└── README.md
+├── README.md                     # English
+└── README.ko.md                  # Korean
 ```
 
 ## Installation
@@ -57,15 +69,28 @@ npm install
 
 ## Usage
 
-In Claude Code:
+### /design-polish — Polishing (non-destructive)
 
 ```
-/design-polish                     # Full polishing + WCAG check + apply (default)
-/design-polish --analyze           # Analysis only, no code changes
-/design-polish --wcag-only         # WCAG check only
-/design-polish --no-wcag           # Skip WCAG check
-/design-polish godly hero          # Search Godly for hero section + apply
-/design-polish --analyze godly hero # Search + analysis only
+/design-polish                                         # Full polishing + WCAG + apply (default)
+/design-polish --analyze                               # Analysis only, no code changes
+/design-polish --wcag-only                             # WCAG check only
+/design-polish --no-wcag                               # Skip WCAG check
+/design-polish --site mobbin                           # Search Mobbin + apply
+/design-polish --site godly --keyword hero             # Search Godly for hero + apply
+/design-polish --analyze --site godly --keyword hero   # Search + analysis only
+```
+
+### /design-renewal — Full Renewal (design system replacement)
+
+```
+/design-renewal                                        # Auto-detect → auto style → plan + confirm → full renewal
+/design-renewal --style glassmorphism                  # Renewal with glassmorphism style
+/design-renewal --analyze                              # Renewal plan only, no code changes
+/design-renewal --wcag-only                            # WCAG check only
+/design-renewal --no-wcag --style dark                 # Skip WCAG, dark style renewal
+/design-renewal --site godly --keyword hero            # Reference Godly hero for renewal
+/design-renewal --analyze --style minimal              # Minimal style renewal plan only
 ```
 
 ## search.cjs — BM25 Search CLI
@@ -98,12 +123,14 @@ Output is JSON:
   "domain": "style",
   "query": "glass modern saas",
   "results": [
-    { "score": 8.93, "data": { "name": "Glassmorphism", ... } }
+    { "score": 8.93, "data": { "name": "Glassmorphism", "..." : "..." } }
   ]
 }
 ```
 
 ## Workflow
+
+### /design-polish
 
 ```
 0. Project analysis + service type detection + screenshot
@@ -116,6 +143,29 @@ Output is JSON:
 6. Result output
 7. Code apply (default, skip with --analyze)
 ```
+
+### /design-renewal
+
+```
+0. Project analysis + service type detection + screenshot
+1. WCAG accessibility check (axe-core)
+1.5. Design knowledge loading + style auto-selection
+2. Reference site selection
+3. Trend search + reference capture
+4. Gap analysis + renewal target identification
+5. Renewal plan (8-level priority)
+6. Result output (including token change table)
+7. Full renewal code apply (CSS vars, palette, typography, tokens)
+```
+
+#### Option Flow Branching
+
+| Option | Flow |
+|--------|------|
+| (default) | Steps 0 → 1 → 1.5 → 2~6 → 7 |
+| `--wcag-only` | Steps 0 → 1 → output (stop) |
+| `--no-wcag` | Steps 0 → 1.5 (skip 1) → 2~6 → 7 |
+| `--analyze` | Steps 0 → 1 → 1.5 → 2~6 → stop (skip 7) |
 
 ## Priority System
 

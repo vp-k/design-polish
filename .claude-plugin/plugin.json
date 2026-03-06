@@ -5,6 +5,6 @@
     "name": "vp-k"
   },
   "repository": "https://github.com/vp-k/design-polish",
-  "skills": ["./skills/design-polish"],
+  "skills": ["./skills/design-polish", "./skills/design-renewal"],
   "commands": ["./commands"]
 }

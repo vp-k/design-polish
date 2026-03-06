@@ -1,13 +1,24 @@
 ---
-name: design-polish
-description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 66개 스타일/96개 색상/57개 타이포 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
+name: design-renewal
+description: 디자인 전면 리뉴얼. 서비스 유형 자동 감지 → data/ 지식 기반에서 스타일/팔레트/타이포 자동 선택 → CSS 변수/테마 토큰/색상 팔레트/타이포그래피/컴포넌트 스타일/레이아웃 전면 교체. WCAG 접근성 체크 포함. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.0.0"
+version: "1.0.0"
 ---
 
-# 디자인 폴리싱 스킬 v2.0
+# 디자인 전면 리뉴얼 스킬 v1.0
 
-디자인 지식 기반(서비스 유형별 규칙, 컴포넌트 체크리스트, UX 규칙) + 실시간 시각 비교(Puppeteer 스크린샷) + WCAG 자동 검사(axe-core) + 트렌드 검색(WebSearch) 통합 폴리싱.
+디자인 지식 기반(서비스 유형별 규칙, 컴포넌트 체크리스트, UX 규칙) + 실시간 시각 비교(Puppeteer 스크린샷) + WCAG 자동 검사(axe-core) + 트렌드 검색(WebSearch) 통합 전면 리뉴얼.
+
+**design-polish와의 차이:**
+
+| | /design-polish | /design-renewal |
+|--|---------------|-----------------|
+| 수준 | 다듬기 (CSS 보정) | 전면 리뉴얼 (디자인 시스템 교체) |
+| 색상 | 대비 보정 | 팔레트 전체 교체 |
+| 레이아웃 | 여백/정렬 수정 | 구조 재배치 |
+| 컴포넌트 | hover/focus 보정 | 스타일 전면 변경 |
+| 타이포 | 크기/행간 조정 | 폰트 페어링 교체 |
+| 위험도 | 낮음 (비파괴적) | 높음 (대규모 변경) |
 
 ### 지식 기반 리소스
 - **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙 (마크다운 직접 Read)
@@ -16,18 +27,20 @@ version: "2.0.0"
 
 ## 인수
 
-- `--analyze`: (옵션) 분석 결과만 출력하고 코드 적용하지 않음 (기본: 분석 + 적용)
+- `--analyze`: (옵션) 분석 + 리뉴얼 계획만 출력, 코드 적용하지 않음
 - `--wcag-only`: (옵션) WCAG 접근성 체크만 수행
 - `--no-wcag`: (옵션) WCAG 체크 생략
+- `--style <keyword>`: (옵션) 원하는 스타일 방향 (예: glassmorphism, minimal, dark)
 - `--site <name>`: (옵션) 레퍼런스 사이트 (미지정시 프로젝트 유형에 맞게 자동 선택)
-- `--keyword <term>`: (옵션) 기능 키워드 (미지정시 전체 디자인 폴리싱)
+- `--keyword <term>`: (옵션) 기능 키워드 (미지정시 전체 리뉴얼)
 
 ### 입력 검증
 
-`--site`, `--keyword` 값은 영문자, 숫자, 하이픈, 공백만 허용합니다: `/^[a-zA-Z0-9 -]+$/`
+- `--style` 값: 영문자, 숫자, 하이픈만 허용 `/^[a-zA-Z0-9-]+$/`
+- `--site`, `--keyword` 값: 영문자, 숫자, 하이픈, 공백만 허용 `/^[a-zA-Z0-9 -]+$/`
 
 검증 실패 시:
-> "입력값은 영문자, 숫자, 하이픈, 공백만 사용할 수 있습니다."
+> "입력값은 영문자, 숫자, 하이픈만 사용할 수 있습니다. 예: glassmorphism, dark-mode, minimal-clean"
 
 사용자에게 재입력을 요청합니다.
 
@@ -39,12 +52,31 @@ version: "2.0.0"
 ## 사용 예시
 
 ```
-/design-polish                              # 전체 폴리싱 + WCAG 체크 + 코드 적용 (기본)
-/design-polish --analyze                    # 분석만, 코드 적용하지 않음
-/design-polish --wcag-only                  # WCAG 접근성 체크만
-/design-polish --site mobbin                # Mobbin에서 검색 + 적용
-/design-polish --site godly --keyword hero  # Godly에서 hero 검색 + 적용
-/design-polish --analyze --site godly --keyword hero # hero 분석만
+/design-renewal                                # 서비스 유형 자동 감지 → 자동 스타일 선택 → 전면 리뉴얼
+/design-renewal --style glassmorphism          # glassmorphism 스타일로 리뉴얼
+/design-renewal --analyze                      # 리뉴얼 계획만 출력
+/design-renewal --wcag-only                    # WCAG 접근성 체크만
+/design-renewal --no-wcag --style dark         # WCAG 생략, 다크 스타일 리뉴얼
+/design-renewal --site godly --keyword hero    # Godly에서 hero 참조하여 리뉴얼
+/design-renewal --analyze --style minimal      # minimal 스타일 리뉴얼 계획만
+```
+
+---
+
+## 옵션별 플로우 분기
+
+```
+[기본 - 인수 없이 실행]
+0단계 → 1단계 → 1.5단계 → 2~6단계 → 7단계 (전면 리뉴얼 적용)
+
+[--wcag-only]
+0단계 → 1단계 → 결과 출력 (종료)
+
+[--no-wcag]
+0단계 → 1.5단계(1단계 건너뜀) → 2~6단계 → 7단계
+
+[--analyze]
+0단계 → 1단계 → 1.5단계 → 2~6단계 → 종료 (7단계 건너뜀)
 ```
 
 ---
@@ -58,7 +90,7 @@ version: "2.0.0"
     ↓
 1단계: WCAG 접근성 체크 (axe-core) [Bash, Read]
     ↓
-1.5단계: 디자인 지식 로딩 [Read, Bash]
+1.5단계: 디자인 지식 로딩 + 스타일 자동 선택 [Read, Bash]
     ↓
 2단계: 레퍼런스 사이트 선택
     ↓
@@ -66,11 +98,11 @@ version: "2.0.0"
     ↓
 4단계: Gap 분석 (시각 비교 + 지식 기반) [Read]
     ↓
-5단계: 개선안 도출 (8단계 우선순위)
+5단계: 리뉴얼 계획 도출 (8단계 우선순위)
     ↓
 6단계: 결과 출력
     ↓
-7단계: 코드 적용 (기본, --analyze 시 생략) [Edit, Bash]
+7단계: 전면 리뉴얼 코드 적용 [Edit, Bash]
     ↓
 Pre-delivery 체크리스트
 ```
@@ -241,7 +273,7 @@ Read(".design-polish/accessibility/wcag-report.json")
 
 ---
 
-## 1.5단계: 디자인 지식 로딩
+## 1.5단계: 디자인 지식 로딩 + 스타일 자동 선택
 
 **사용 도구**: `Read`, `Bash`
 
@@ -255,7 +287,9 @@ Read("${CLAUDE_PLUGIN_ROOT}/knowledge/component-checklist.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/ux-rules.md")
 ```
 
-### 스크립트 검색 (감지된 서비스 유형/키워드 기반)
+### 스타일 자동 선택 (--style 미지정시)
+
+`--style`이 지정되지 않은 경우, 감지된 서비스 유형과 industry-rules.md의 추천 스타일을 기반으로 자동 선택합니다:
 
 ```bash
 # 0단계에서 감지된 서비스 유형 키워드를 사용
@@ -263,16 +297,35 @@ Read("${CLAUDE_PLUGIN_ROOT}/knowledge/ux-rules.md")
 node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain style "saas dashboard minimal"
 
 # 예: Online Shop 감지 시
-node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain color "ecommerce shopping"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain color "ecommerce shopping vibrant"
 
 # 예: Healthcare Service 감지 시
 node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain typography "medical clean accessible"
 ```
 
+### --style 지정시
+
+사용자가 `--style <keyword>`로 방향을 지정한 경우, 해당 키워드로 검색합니다:
+
+```bash
+# 예: --style glassmorphism
+node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain style "glassmorphism"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain color "glassmorphism translucent"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain typography "glassmorphism modern"
+```
+
+### 리뉴얼 대상 결정
+
+스타일/색상/타이포 검색 결과를 종합하여 교체할 디자인 토큰을 결정합니다:
+- **색상 팔레트**: Primary, Secondary, Accent, Background, Text 색상
+- **타이포그래피**: Heading + Body 폰트 페어링
+- **스타일 토큰**: border-radius, shadow, spacing scale
+- **테마**: 라이트/다크 모드 설정
+
 ```bash
 # 기술 스택 가이드 (코드 적용 시에만)
 # 예: React 프로젝트 감지 시
-node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "accessibility aria"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "theming css-variables"
 ```
 
 ### 검색 예시
@@ -372,24 +425,15 @@ Read(".design-polish/screenshots/reference-hero.png")
 | **서비스 유형 적합성** | **industry-rules.md 기준 스타일/색상 일치 여부** | industry-rules.md |
 | **스타일 매칭** | **search.cjs 검색 결과와 현재 디자인 비교** | search.cjs style 검색 결과 |
 
-### 지식 기반 분석 (추가)
+### 리뉴얼 추가 분석
 
-1. **서비스 유형 적합성**: industry-rules.md에서 해당 서비스 유형의 추천 스타일/색상과 현재 디자인 비교
-2. **컴포넌트 품질**: component-checklist.md의 Do/Don't 체크 — 사용 중인 컴포넌트별 위반 확인
-3. **UX 규칙 준수**: ux-rules.md의 각 카테고리별 패턴 체크
-4. **스타일 매칭**: search.cjs 검색 결과의 추천 스타일과 현재 디자인 비교
-5. **색상/타이포 매칭**: 검색된 팔레트/폰트 페어링 vs 현재 사용 중인 값 비교
-
-### 플랫폼별 추가 기준
-
-| 플랫폼 | 핵심 기준 |
-|--------|----------|
-| 웹 | 스캔 가능성, 정보 밀도, 반응형 |
-| 앱 | 엄지 도달 범위, 제스처, 네이티브 패턴 |
+1. **현재 디자인 시스템 파악**: CSS 변수, 테마 토큰, 색상 코드, 폰트 사용 현황
+2. **교체 대상 식별**: 현재 값 → 새 값 매핑 테이블 작성
+3. **영향 범위 분석**: 변경 시 영향받는 파일 목록
 
 ---
 
-## 5단계: 개선안 도출 (8단계 우선순위)
+## 5단계: 리뉴얼 계획 도출 (8단계 우선순위)
 
 ### 우선순위 분류
 
@@ -406,7 +450,7 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 각 개선안에는 다음 정보를 포함합니다:
 - 대상 파일 경로
-- 구체적인 변경 내용
+- 구체적인 변경 내용 (현재 값 → 새 값)
 - 참조 근거 (knowledge 파일, search.cjs 결과, WCAG 기준 등)
 
 ---
@@ -420,6 +464,7 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 [프레임워크], [스타일링 방식] 기반 [프로젝트 유형]
 감지된 서비스 유형: [서비스 유형명]
+선택된 리뉴얼 스타일: [스타일명] (자동 감지 / --style 지정)
 
 ## WCAG 접근성 체크
 
@@ -429,79 +474,56 @@ Read(".design-polish/screenshots/reference-hero.png")
 | 터치 타겟 | O 통과 | |
 | 텍스트 크기 | ! 1건 주의 | caption: 11px |
 
-## 서비스 유형별 적합성
+## 리뉴얼 디자인 토큰
 
-| 항목 | 추천 (industry-rules) | 현재 | 일치 |
-|------|----------------------|------|------|
-| 스타일 | Glassmorphism + Flat | Flat Design | 부분 일치 |
-| 색상 무드 | Trust blue + Accent contrast | Blue + Grey | 일치 |
-| 타이포 | Professional + Hierarchy | ... | ... |
-| 핵심 효과 | Subtle hover (200-250ms) | 호버 없음 | 불일치 |
+### 색상 팔레트 교체
+| 역할 | 현재 | 새 값 | 근거 |
+|------|------|-------|------|
+| Primary | #3B82F6 | #6366F1 | [스타일명] 추천 |
+| Secondary | #64748B | #8B5CF6 | [스타일명] 추천 |
+| Background | #FFFFFF | #0F172A | 다크 모드 기반 |
+| Text | #1E293B | #F8FAFC | 다크 모드 기반 |
 
-## 컴포넌트 체크 결과
+### 타이포그래피 교체
+| 역할 | 현재 | 새 값 |
+|------|------|-------|
+| Heading | Inter | Space Grotesk |
+| Body | Inter | Inter (유지) |
 
-| 컴포넌트 | 위반 항목 | 심각도 |
-|---------|----------|--------|
-| Button | 터치 타겟 38px (최소 44px) | HIGH |
-| Card | 호버 효과 없음 | MEDIUM |
-| Input | placeholder만 사용, label 없음 | HIGH |
+### 스타일 토큰 교체
+| 토큰 | 현재 | 새 값 |
+|------|------|-------|
+| border-radius | 8px | 16px |
+| shadow | 0 2px 4px | 0 8px 32px |
+| spacing-base | 4px | 4px (유지) |
 
-## 트렌드 요약
+## 변경 예정 파일 목록
 
-- [핵심 트렌드 1]
-- [핵심 트렌드 2]
-- [핵심 트렌드 3]
+| 파일 | 변경 범위 |
+|------|----------|
+| src/styles/globals.css | CSS 변수 전면 교체 |
+| tailwind.config.ts | 색상/폰트 설정 교체 |
+| src/components/*.tsx | 컴포넌트 스타일 교체 |
 
-## Gap 분석
-
-| 영역 | 현재 | 추천 (지식 기반 + 트렌드) | Gap |
-|------|------|--------------------------|-----|
-| 레이아웃 | ... | ... | ... |
-| 타이포그래피 | ... | [추천 폰트 페어링 + URL] | ... |
-| 색상 | ... | [추천 팔레트 HEX 코드] | ... |
-| 인터랙션 | ... | ... | ... |
-| 컴포넌트 | ... | ... | ... |
-| 접근성 | 3건 위반 | WCAG AA 준수 | 색상 대비 수정 필요 |
-| 스타일 적합성 | ... | [추천 스타일명] | ... |
-
-## 추천 리소스 (search.cjs 결과)
-
-- **추천 스타일**: [스타일명] — [cssHints]
-- **추천 색상**: Primary [HEX], Secondary [HEX], CTA [HEX], BG [HEX]
-- **추천 폰트**: [Heading Font] + [Body Font] — [Google Fonts URL]
-
-## 개선안 (8단계 우선순위)
+## 리뉴얼 계획 (8단계 우선순위)
 
 ### P1: 접근성 (CRITICAL)
-- [ ] btn-primary 색상 대비 수정 (src/components/Button.tsx)
-
-### P2: 터치/인터랙션 (CRITICAL)
 - [ ] [개선안 + 대상 파일]
 
-### P3: 성능 (HIGH)
-- [ ] [개선안 + 대상 파일]
-
-### P4: 레이아웃/반응형 (HIGH)
-- [ ] [개선안 + 대상 파일]
-
-### P5: 타이포/색상 (MEDIUM)
-- [ ] [개선안 + 대상 파일]
-
-### P6: 애니메이션 (MEDIUM)
-- [ ] [개선안 + 대상 파일]
-
-### P7: 스타일 적합성 (MEDIUM)
-- [ ] [개선안 + 대상 파일]
-
-### P8: 차트/데이터 (LOW)
-- [ ] [개선안 + 대상 파일]
+### P2~P8: [개선안 목록]
 ```
 
 ---
 
-## 7단계: 코드 적용
+## 7단계: 전면 리뉴얼 코드 적용
 
 **사용 도구**: `Edit`, `Bash`
+
+### 안전장치
+
+1. **변경 예정 파일 목록을 먼저 출력**하고 사용자 확인을 요청합니다
+2. **기능 코드(비즈니스 로직)는 절대 변경하지 않음** — 스타일/UI 코드만 변경
+3. 변경 전 현재 파일 상태를 Read로 확인
 
 ### 스택 가이드 참조
 
@@ -509,22 +531,35 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 ```bash
 # 기술 스택 가이드 검색 (적용할 영역 키워드로)
-# 예: React 프로젝트 감지 시
-node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "accessibility aria"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "theming css-variables"
 ```
+
+### 적용 범위 (design-polish보다 확대)
+
+| 영역 | 적용 내용 |
+|------|----------|
+| CSS 변수/테마 토큰 | 전면 교체 (--color-primary, --font-heading 등) |
+| 색상 팔레트 | Primary, Secondary, Accent, Background, Text 교체 |
+| 타이포그래피 | Heading + Body 폰트 페어링 교체 |
+| 컴포넌트 스타일 | border-radius, shadow, spacing scale 통일 |
+| 레이아웃 | 그리드/간격 재구성 |
+| 다크/라이트 모드 | 테마 재생성 |
 
 ### 적용 순서
 
-1. P1 (접근성 CRITICAL) 우선순위부터 순차 적용
-2. P2~P4 (CRITICAL/HIGH) 적용
-3. P5~P7 (MEDIUM) — 사용자 확인 후 적용
-4. 각 수정 후 파일 저장
-5. 적용 결과 요약 출력
+1. **CSS 변수/테마 토큰 교체** (가장 영향 범위 넓음 → 먼저)
+2. **Tailwind/스타일 설정 교체** (tailwind.config, theme 등)
+3. P1 (접근성 CRITICAL) 적용
+4. P2~P4 (CRITICAL/HIGH) 적용
+5. P5~P7 (MEDIUM) — 사용자 확인 후 적용
+6. 각 수정 후 파일 저장
+7. 적용 결과 요약 출력
 
 ### 적용하지 않는 것
 
+- 비즈니스 로직 (이벤트 핸들러, API 호출, 상태 관리 등)
+- HTML 구조 변경 (DOM 재배치)
 - 새 라이브러리 설치 필요한 변경
-- 대규모 구조 변경 (리팩토링 수준)
 - 브레이킹 체인지
 
 ### 적용 결과 출력
@@ -534,13 +569,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 
 | 파일 | 변경 내용 |
 |------|----------|
-| src/components/Button.tsx | 색상 대비 수정 (4.5:1 이상) |
-| src/components/Button.tsx | hover 스타일 추가 |
-| src/styles/global.css | 여백 조정 |
+| src/styles/globals.css | CSS 변수 전면 교체 (12개 변수) |
+| tailwind.config.ts | 색상 팔레트 + 폰트 교체 |
+| src/components/Button.tsx | 스타일 토큰 적용 |
 
 ## 미적용 (수동 필요)
 
-- [ ] Framer Motion 설치 필요 (애니메이션)
+- [ ] Google Fonts CDN 링크 추가 (layout.tsx의 <head>)
+- [ ] 이미지 에셋 교체 (브랜드 색상 변경에 따른)
 ```
 
 ---
@@ -595,6 +631,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 - [ ] 일관된 border-radius (8px/12px/16px 중 택일)
 - [ ] 일관된 spacing scale (예: 4/8/12/16/24/32px)
 - [ ] 폰트 계층 명확 (h1 > h2 > h3 > body > caption)
+
+### 디자인 시스템 일관성
+- [ ] CSS 변수가 모든 컴포넌트에 일관되게 적용됨
+- [ ] 하드코딩된 색상/폰트 값이 남아있지 않음
+- [ ] 다크/라이트 모드 토큰이 올바르게 설정됨
 
 ### 인터랙션
 - [ ] 모든 클릭 가능 요소에 `cursor: pointer`
