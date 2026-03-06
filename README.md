@@ -14,12 +14,14 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 - **Reference Site Search** — Mobbin, Godly, Dribbble, SiteInspire, etc.
 - **WCAG Accessibility** — axe-core based automated checks
 - **8-Level Priority System** — P1 (CRITICAL) to P8 (LOW) improvements
-- **Auto-Apply** — Code improvements with `--apply` flag
+- **Auto-Apply** — Code improvements applied by default (use `--analyze` for report only)
 
 ## Directory Structure
 
 ```
-plugins/design-polish/
+design-polish/
+├── .claude-plugin/
+│   └── plugin.json               # Plugin metadata
 ├── knowledge/                    # Markdown — direct Read()
 │   ├── industry-rules.md         # 20 service type UI reasoning rules
 │   ├── component-checklist.md    # 6 component Do/Don't checklists
@@ -42,12 +44,14 @@ plugins/design-polish/
 
 ## Installation
 
-```bash
-# Clone the plugin
-git clone https://github.com/<your-org>/design-polish ~/.claude/plugins/marketplaces/design-polish
+This plugin is part of the [devncat](https://github.com/vp-k/devncat) marketplace.
 
-# Install dependencies (puppeteer + axe-core only, no Python)
-cd ~/.claude/plugins/marketplaces/design-polish
+```bash
+# Clone the marketplace (includes all plugins)
+git clone --recurse-submodules https://github.com/vp-k/devncat ~/.claude/plugins/marketplaces/devncat
+
+# Install design-polish dependencies (puppeteer + axe-core only, no Python)
+cd ~/.claude/plugins/marketplaces/devncat/plugins/design-polish
 npm install
 ```
 
@@ -56,12 +60,12 @@ npm install
 In Claude Code:
 
 ```
-/design-polish                    # Full polishing + WCAG check
-/design-polish --apply            # Polish + apply changes
-/design-polish --wcag-only        # WCAG check only
-/design-polish --no-wcag          # Skip WCAG check
-/design-polish godly hero         # Search Godly for hero section
-/design-polish --apply godly hero # Search + apply
+/design-polish                     # Full polishing + WCAG check + apply (default)
+/design-polish --analyze           # Analysis only, no code changes
+/design-polish --wcag-only         # WCAG check only
+/design-polish --no-wcag           # Skip WCAG check
+/design-polish godly hero          # Search Godly for hero section + apply
+/design-polish --analyze godly hero # Search + analysis only
 ```
 
 ## search.cjs — BM25 Search CLI
@@ -110,7 +114,7 @@ Output is JSON:
 4. Gap analysis (visual + knowledge-based)
 5. Improvement plan (8-level priority)
 6. Result output
-7. Code apply (--apply)
+7. Code apply (default, skip with --analyze)
 ```
 
 ## Priority System
