@@ -1,0 +1,26 @@
+{
+  "scope": "design-renewal 명령어 추가 구현 전체",
+  "created": "2026-03-06T00:00:00Z",
+  "status": "completed",
+  "outputPath": "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/code-review-result.md",
+  "phase": "report",
+  "resolvedFiles": [
+    "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/commands/design-renewal.md",
+    "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/skills/design-renewal/SKILL.md",
+    "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/.claude-plugin/plugin.json",
+    "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/README.md"
+  ],
+  "chunks": [
+    { "id": 1, "files": [
+      "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/commands/design-renewal.md",
+      "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/skills/design-renewal/SKILL.md",
+      "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/.claude-plugin/plugin.json",
+      "C:/Users/user01/Desktop/code/claude-code/flutter-craft/plugins/design-polish/README.md"
+    ], "status": "reviewed", "findingsCount": 5 }
+  ],
+  "totalFindings": 5,
+  "confirmedFindings": 4,
+  "dismissedFindings": 1,
+  "turnCount": 0,
+  "lastCompactAt": 0
+}

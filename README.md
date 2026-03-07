@@ -1,16 +1,7 @@
-# design-polish v2.1
+# design-polish v2.0
 
-[한국어](README.ko.md)
-
-Claude Code plugin for design intelligence-driven polishing and full renewal.
+Claude Code plugin for design intelligence-driven polishing.
 Combines built-in design knowledge base + visual comparison + WCAG accessibility checks + trend search.
-
-## Commands
-
-| Command | Description | Scope |
-|---------|-------------|-------|
-| `/design-polish` | CSS corrections, spacing fixes, hover/focus refinements | Low risk (non-destructive) |
-| `/design-renewal` | Full design system replacement — palette, typography, tokens | High risk (large-scale changes) |
 
 ## Features
 
@@ -23,14 +14,12 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 - **Reference Site Search** — Mobbin, Godly, Dribbble, SiteInspire, etc.
 - **WCAG Accessibility** — axe-core based automated checks
 - **8-Level Priority System** — P1 (CRITICAL) to P8 (LOW) improvements
-- **Auto-Apply** — Code improvements applied by default (use `--analyze` for report only)
+- **Auto-Apply** — Code improvements with `--apply` flag
 
 ## Directory Structure
 
 ```
-design-polish/
-├── .claude-plugin/
-│   └── plugin.json               # Plugin metadata
+plugins/design-polish/
 ├── knowledge/                    # Markdown — direct Read()
 │   ├── industry-rules.md         # 20 service type UI reasoning rules
 │   ├── component-checklist.md    # 6 component Do/Don't checklists
@@ -44,54 +33,65 @@ design-polish/
 │   ├── capture.cjs               # Puppeteer screenshot + axe-core
 │   └── search.cjs                # BM25 search engine (Node.js)
 ├── skills/
-│   ├── design-polish/SKILL.md    # Polish skill spec
-│   └── design-renewal/SKILL.md   # Renewal skill spec
+│   ├── design-polish/
+│   │   └── SKILL.md              # Polish skill specification
+│   └── design-renewal/
+│       └── SKILL.md              # Renewal skill specification
 ├── commands/
-│   ├── design-polish.md          # Polish command
-│   └── design-renewal.md         # Renewal command
+│   ├── design-polish.md          # Polish command definition
+│   └── design-renewal.md         # Renewal command definition
 ├── package.json
-├── README.md                     # English
-└── README.ko.md                  # Korean
+└── README.md
 ```
 
 ## Installation
 
-This plugin is part of the [devncat](https://github.com/vp-k/devncat) marketplace.
-
 ```bash
-# Clone the marketplace (includes all plugins)
-git clone --recurse-submodules https://github.com/vp-k/devncat ~/.claude/plugins/marketplaces/devncat
+# Clone the plugin
+git clone https://github.com/<your-org>/design-polish ~/.claude/plugins/marketplaces/design-polish
 
-# Install design-polish dependencies (puppeteer + axe-core only, no Python)
-cd ~/.claude/plugins/marketplaces/devncat/plugins/design-polish
+# Install dependencies (puppeteer + axe-core only, no Python)
+cd ~/.claude/plugins/marketplaces/design-polish
 npm install
 ```
 
 ## Usage
 
-### /design-polish — Polishing (non-destructive)
+In Claude Code:
+
+### /design-polish — Non-destructive polishing
 
 ```
-/design-polish                                         # Full polishing + WCAG + apply (default)
-/design-polish --analyze                               # Analysis only, no code changes
-/design-polish --wcag-only                             # WCAG check only
-/design-polish --no-wcag                               # Skip WCAG check
-/design-polish --site mobbin                           # Search Mobbin + apply
-/design-polish --site godly --keyword hero             # Search Godly for hero + apply
-/design-polish --analyze --site godly --keyword hero   # Search + analysis only
+/design-polish                    # Full polishing + WCAG check
+/design-polish --apply            # Polish + apply changes
+/design-polish --wcag-only        # WCAG check only
+/design-polish --no-wcag          # Skip WCAG check
+/design-polish godly hero         # Search Godly for hero section
+/design-polish --apply godly hero # Search + apply
 ```
 
-### /design-renewal — Full Renewal (design system replacement)
+### /design-renewal — Full design system renewal
 
 ```
-/design-renewal                                        # Auto-detect → auto style → plan + confirm → full renewal
-/design-renewal --style glassmorphism                  # Renewal with glassmorphism style
-/design-renewal --analyze                              # Renewal plan only, no code changes
-/design-renewal --wcag-only                            # WCAG check only
-/design-renewal --no-wcag --style dark                 # Skip WCAG, dark style renewal
-/design-renewal --site godly --keyword hero            # Reference Godly hero for renewal
-/design-renewal --analyze --style minimal              # Minimal style renewal plan only
+/design-renewal                          # Full renewal (analyze + apply)
+/design-renewal --analyze                # Analysis only (no code changes)
+/design-renewal glassmorphism            # Glassmorphism style renewal
+/design-renewal dark                     # Dark theme renewal
+/design-renewal minimal godly            # Minimal style, Godly reference
+/design-renewal --wcag-only              # WCAG check only
+/design-renewal brutalist mobbin hero    # Brutalism, Mobbin hero search
 ```
+
+### Comparison
+
+| | /design-polish | /design-renewal |
+|--|---------------|-----------------|
+| Scope | Tweaks (CSS fixes) | Full renewal (design system swap) |
+| Colors | Contrast fixes | Entire palette replacement |
+| Layout | Margin/alignment | Structure reorganization |
+| Components | hover/focus fixes | Full style overhaul |
+| Typography | Size/line-height | Font pairing replacement |
+| Risk | Low (non-destructive) | High (large-scale changes) |
 
 ## search.cjs — BM25 Search CLI
 
@@ -123,14 +123,12 @@ Output is JSON:
   "domain": "style",
   "query": "glass modern saas",
   "results": [
-    { "score": 8.93, "data": { "name": "Glassmorphism", "..." : "..." } }
+    { "score": 8.93, "data": { "name": "Glassmorphism", ... } }
   ]
 }
 ```
 
 ## Workflow
-
-### /design-polish
 
 ```
 0. Project analysis + service type detection + screenshot
@@ -141,31 +139,8 @@ Output is JSON:
 4. Gap analysis (visual + knowledge-based)
 5. Improvement plan (8-level priority)
 6. Result output
-7. Code apply (default, skip with --analyze)
+7. Code apply (--apply)
 ```
-
-### /design-renewal
-
-```
-0. Project analysis + service type detection + screenshot
-1. WCAG accessibility check (axe-core)
-1.5. Design knowledge loading + style auto-selection
-2. Reference site selection
-3. Trend search + reference capture
-4. Gap analysis + renewal target identification
-5. Renewal plan (8-level priority)
-6. Result output (including token change table)
-7. Full renewal code apply (CSS vars, palette, typography, tokens)
-```
-
-#### Option Flow Branching
-
-| Option | Flow |
-|--------|------|
-| (default) | Steps 0 → 1 → 1.5 → 2~6 → 7 |
-| `--wcag-only` | Steps 0 → 1 → output (stop) |
-| `--no-wcag` | Steps 0 → 1.5 (skip 1) → 2~6 → 7 |
-| `--analyze` | Steps 0 → 1 → 1.5 → 2~6 → stop (skip 7) |
 
 ## Priority System
 

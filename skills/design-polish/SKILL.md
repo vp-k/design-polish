@@ -16,35 +16,21 @@ version: "2.0.0"
 
 ## 인수
 
-- `--analyze`: (옵션) 분석 결과만 출력하고 코드 적용하지 않음 (기본: 분석 + 적용)
+- `--apply`: (옵션) 개선안을 코드에 직접 적용
 - `--wcag-only`: (옵션) WCAG 접근성 체크만 수행
 - `--no-wcag`: (옵션) WCAG 체크 생략
-- `--site <name>`: (옵션) 레퍼런스 사이트 (미지정시 프로젝트 유형에 맞게 자동 선택)
-- `--keyword <term>`: (옵션) 기능 키워드 (미지정시 전체 디자인 폴리싱)
-
-### 입력 검증
-
-`--site`, `--keyword` 값은 영문자, 숫자, 하이픈, 공백만 허용합니다: `/^[a-zA-Z0-9 -]+$/`
-
-검증 실패 시:
-> "입력값은 영문자, 숫자, 하이픈, 공백만 사용할 수 있습니다."
-
-사용자에게 재입력을 요청합니다.
-
-### 상호배타 옵션
-
-`--wcag-only`와 `--no-wcag`는 동시 사용할 수 없습니다. 동시 지정 시:
-> "⚠ --wcag-only와 --no-wcag는 동시에 사용할 수 없습니다. 하나만 선택해주세요."
+- $1: (옵션) 레퍼런스 사이트 (미지정시 프로젝트 유형에 맞게 자동 선택)
+- $2: (옵션) 기능 키워드 (미지정시 전체 디자인 폴리싱)
 
 ## 사용 예시
 
 ```
-/design-polish                              # 전체 폴리싱 + WCAG 체크 + 코드 적용 (기본)
-/design-polish --analyze                    # 분석만, 코드 적용하지 않음
-/design-polish --wcag-only                  # WCAG 접근성 체크만
-/design-polish --site mobbin                # Mobbin에서 검색 + 적용
-/design-polish --site godly --keyword hero  # Godly에서 hero 검색 + 적용
-/design-polish --analyze --site godly --keyword hero # hero 분석만
+/design-polish                    # 전체 자동 폴리싱 + WCAG 체크
+/design-polish --apply            # 폴리싱 + 코드 적용
+/design-polish --wcag-only        # WCAG 접근성 체크만
+/design-polish mobbin             # Mobbin에서 검색
+/design-polish godly hero         # Godly에서 hero 검색
+/design-polish --apply godly hero # hero 폴리싱 + 코드 적용
 ```
 
 ---
@@ -70,7 +56,7 @@ version: "2.0.0"
     ↓
 6단계: 결과 출력
     ↓
-7단계: 코드 적용 (기본, --analyze 시 생략) [Edit, Bash]
+7단계: 코드 적용 (--apply 시) [Edit, Bash]
     ↓
 Pre-delivery 체크리스트
 ```
@@ -112,11 +98,11 @@ Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 3000,5173,8
 
 ```bash
 # 플러그인 디렉토리에서 npm install 실행 여부 확인
-ls ~/.claude/plugins/marketplaces/devncat/plugins/design-polish/node_modules/puppeteer
+ls ~/.claude/plugins/marketplaces/design-polish/node_modules/puppeteer
 ```
 
 없으면 안내:
-> "플러그인 의존성을 설치해주세요: cd ~/.claude/plugins/marketplaces/devncat/plugins/design-polish && npm install"
+> "플러그인 의존성을 설치해주세요: cd ~/.claude/plugins/marketplaces/design-polish && npm install"
 
 ### 3. Node.js 확인
 
@@ -292,7 +278,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 
 **사용 도구**: 판단 로직
 
-### --site 미지정시 자동 선택
+### $1 미지정시 자동 선택
 
 | 프로젝트 유형 | 판단 기준 | 우선 사이트 | 대체 사이트 |
 |--------------|----------|-------------|------------|
@@ -499,7 +485,7 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 ---
 
-## 7단계: 코드 적용
+## 7단계: 코드 적용 (--apply 옵션시만)
 
 **사용 도구**: `Edit`, `Bash`
 
@@ -588,7 +574,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 
 ## Pre-delivery 체크리스트
 
-코드 적용 후 또는 최종 결과 보고 전에 다음을 확인합니다:
+코드 적용 후 (--apply 시) 또는 최종 결과 보고 전에 다음을 확인합니다:
 
 ### 시각 품질
 - [ ] 색상 대비 4.5:1 이상 (WCAG AA)
