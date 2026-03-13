@@ -42,9 +42,13 @@ version: "2.0.0"
     ↓
 0단계: 프로젝트 분석 + 서비스 유형 감지 + 스크린샷 캡처 [Glob, Read, Bash]
     ↓
+0.5단계: Console Error 캡처 + Responsive Viewport [Bash]
+    ↓
 1단계: WCAG 접근성 체크 (axe-core) [Bash, Read]
     ↓
 1.5단계: 디자인 지식 로딩 [Read, Bash]
+    ↓
+1.8단계: Design Health Score 산출 + Regression 비교 [Read]
     ↓
 2단계: 레퍼런스 사이트 선택
     ↓
@@ -169,9 +173,19 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" / /about /pricing
 
 # 포트 변경시
 BASE_URL=http://localhost:5173 node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" /
+
+# Responsive 뷰포트 (모바일 + 태블릿 + 데스크톱) 캡처
+node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" --responsive / /about
 ```
 
 **저장 위치**: `.design-polish/screenshots/current-*.png`
+- Responsive 모드: `current-mobile-*.png`, `current-tablet-*.png`, `current-desktop-*.png`
+
+**자동 부산물**:
+- `.design-polish/accessibility/console-errors.json` — JS 콘솔 에러/경고 캡처
+- `.design-polish/health-score.json` — Design Health Score (0-100) + regression 비교
+
+**참고**: WCAG 접근성 체크는 desktop 뷰포트(1280×720)에서만 실행됩니다. `--wcag-only` 모드도 동일하게 desktop 뷰포트만 사용합니다. 모바일 전용 접근성 이슈(터치 타겟 크기 등)는 수동 점검이 필요합니다.
 
 ### 캡처 후 Read로 이미지 분석
 
@@ -206,7 +220,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" --wcag /
 | 색상 대비 | 대형 텍스트 대비 | 3:1 (AA) |
 | 색상 대비 | UI 컴포넌트 대비 | 3:1 |
 | 텍스트 크기 | 최소 텍스트 크기 | 12px 이상 권장 |
-| 터치 타겟 | 최소 타겟 크기 | 44x44px (모바일) |
+| 터치 타겟 | 최소 타겟 크기 | 44x44px (수동 점검 필요) |
 | 링크 | 링크 구분 | 밑줄 또는 3:1 대비 |
 
 ### 결과 저장
@@ -271,6 +285,41 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 | Finance & Trading | "fintech dark glass" | "fintech crypto" | "financial trust" |
 | Education & Learning | "education playful friendly" | "education playful" | "playful friendly" |
 | Wellness & Health | "wellness organic biophilic" | "wellness nature calm" | "calming soft rounded" |
+
+---
+
+## 1.8단계: Design Health Score + Regression 비교
+
+**사용 도구**: `Read`
+
+0단계 캡처 시 자동으로 산출된 Health Score를 확인하고 보고합니다.
+
+### Health Score 산출 기준 (가중 점수 0-100)
+
+| 카테고리 | 가중치 | 산출 방법 |
+|----------|--------|-----------|
+| WCAG Critical | 30% | critical 위반 1건당 -10 |
+| WCAG Serious | 20% | serious 위반 1건당 -5 |
+| Console Errors | 20% | JS 에러 1건당 -5 |
+| Style Fit | 15% | (현재 기본값, 향후 지식 기반 분석으로 확장) |
+| Performance | 15% | (현재 기본값, 향후 Lighthouse 연동으로 확장) |
+
+### 결과 확인
+
+```
+Read(".design-polish/health-score.json")
+```
+
+**출력 예시**:
+```json
+{
+  "score": 75,
+  "breakdown": { "wcagCritical": 20, "wcagSerious": 15, "consoleErrors": 20, "styleFit": 15, "performance": 15 },
+  "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression" }
+}
+```
+
+**Regression 감지**: 이전 점수 대비 하락 시 경고 표시. 개선안 도출 (5단계)에서 regression 원인 분석 우선 처리.
 
 ---
 
