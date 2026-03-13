@@ -33,9 +33,15 @@ const CONFIG = {
   outputDir: process.env.OUTPUT_DIR || path.join(process.cwd(), '.design-polish', 'screenshots'),
   accessibilityDir: process.env.A11Y_DIR || path.join(process.cwd(), '.design-polish', 'accessibility'),
   viewport: { width: 1280, height: 720 },
-  waitTime: parseInt(process.env.WAIT_TIME) || 2000,
-  timeout: parseInt(process.env.TIMEOUT) || 30000,
-  retries: parseInt(process.env.RETRIES) || 2,
+  // Responsive viewport 설정
+  viewports: [
+    { name: 'mobile', width: 375, height: 812 },
+    { name: 'tablet', width: 768, height: 1024 },
+    { name: 'desktop', width: 1280, height: 720 },
+  ],
+  waitTime: Math.max(0, parseInt(process.env.WAIT_TIME, 10) || 2000),
+  timeout: Math.max(1, parseInt(process.env.TIMEOUT, 10) || 30000),
+  retries: Math.max(0, parseInt(process.env.RETRIES, 10) || 2),
   fullPage: process.env.FULL_PAGE === 'true' || false,
 };
 
@@ -91,7 +97,8 @@ async function checkServer(url) {
   const http = url.startsWith('https') ? require('https') : require('http');
   return new Promise((resolve) => {
     const req = http.get(url, { timeout: 5000 }, (res) => {
-      resolve({ ok: true, status: res.statusCode });
+      const ok = res.statusCode >= 200 && res.statusCode < 400;
+      resolve({ ok, status: res.statusCode });
     });
     req.on('error', () => resolve({ ok: false, status: 0 }));
     req.on('timeout', () => {
@@ -157,18 +164,142 @@ function saveAccessibilityReport(report, filename = 'wcag-report.json') {
 }
 
 // ============================================
+// Console Error 캡처
+// ============================================
+
+function setupConsoleCapture(page) {
+  const consoleErrors = [];
+  const pageErrors = [];
+
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' || msg.type() === 'warning') {
+      consoleErrors.push({
+        type: msg.type(),
+        text: msg.text(),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  page.on('pageerror', (error) => {
+    pageErrors.push({
+      message: error.message,
+      stack: error.stack ? error.stack.substring(0, 500) : null,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  return { consoleErrors, pageErrors };
+}
+
+function saveConsoleErrors(consoleErrors, pageErrors) {
+  if (consoleErrors.length === 0 && pageErrors.length === 0) return;
+
+  ensureDir(CONFIG.accessibilityDir);
+  const report = {
+    timestamp: new Date().toISOString(),
+    consoleErrors,
+    pageErrors,
+    summary: {
+      totalErrors: consoleErrors.filter(e => e.type === 'error').length + pageErrors.length,
+      totalWarnings: consoleErrors.filter(e => e.type === 'warning').length,
+    },
+  };
+
+  const filepath = path.join(CONFIG.accessibilityDir, 'console-errors.json');
+  validatePathWithinDir(filepath, CONFIG.accessibilityDir);
+  fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
+  console.log(`Console errors saved: console-errors.json (${report.summary.totalErrors} errors, ${report.summary.totalWarnings} warnings)`);
+}
+
+// ============================================
+// Design Health Score 산출
+// ============================================
+
+function calculateDesignHealthScore(wcagReport, consoleErrors, pageErrors) {
+  let score = 100;
+  const breakdown = {};
+
+  // WCAG Critical: 30% weight
+  if (wcagReport) {
+    const criticalViolations = wcagReport.violations.filter(v => v.impact === 'critical').length;
+    const seriousViolations = wcagReport.violations.filter(v => v.impact === 'serious').length;
+    breakdown.wcagCritical = Math.max(0, 30 - (criticalViolations * 10));
+    breakdown.wcagSerious = Math.max(0, 20 - (seriousViolations * 5));
+  } else {
+    // WCAG 데이터 없음 — 검사 미수행이므로 0점 (만점 부여 방지)
+    breakdown.wcagCritical = 0;
+    breakdown.wcagSerious = 0;
+  }
+
+  // Console errors: 20% weight
+  const errorCount = (consoleErrors || []).filter(e => e.type === 'error').length + (pageErrors || []).length;
+  breakdown.consoleErrors = Math.max(0, 20 - (errorCount * 5));
+
+  // Style fit placeholder: 15%
+  breakdown.styleFit = 15;
+
+  // Performance placeholder: 15%
+  breakdown.performance = 15;
+
+  score = Object.values(breakdown).reduce((sum, v) => sum + v, 0);
+
+  return { score: Math.max(0, Math.min(100, score)), breakdown };
+}
+
+function saveHealthScore(healthScore) {
+  const healthScoreDir = path.join(process.cwd(), '.design-polish');
+  ensureDir(healthScoreDir);
+  const filepath = path.join(healthScoreDir, 'health-score.json');
+  validatePathWithinDir(filepath, healthScoreDir);
+
+  // Regression baseline 비교
+  let regression = null;
+  const resolvedPath = path.resolve(filepath);
+  if (fs.existsSync(resolvedPath)) {
+    try {
+      const prev = JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
+      const diff = healthScore.score - (prev.score || 0);
+      regression = {
+        previousScore: prev.score || 0,
+        currentScore: healthScore.score,
+        diff,
+        status: diff < 0 ? 'regression' : diff > 0 ? 'improved' : 'unchanged',
+      };
+    } catch (_) { /* ignore parse errors */ }
+  }
+
+  const report = {
+    ...healthScore,
+    timestamp: new Date().toISOString(),
+    regression,
+  };
+
+  fs.writeFileSync(resolvedPath, JSON.stringify(report, null, 2));
+  console.log(`Design Health Score: ${healthScore.score}/100`);
+  if (regression) {
+    console.log(`  ${regression.status}: ${regression.previousScore} → ${regression.currentScore} (${regression.diff >= 0 ? '+' : ''}${regression.diff})`);
+  }
+}
+
+// ============================================
 // 캡처 함수
 // ============================================
 
 async function createBrowser() {
+  const args = [];
+  // 샌드박스는 기본 활성화. 컨테이너/CI 등 불가피한 환경에서만 UNSAFE_NO_SANDBOX=true로 비활성화
+  if (process.env.UNSAFE_NO_SANDBOX === 'true') {
+    args.push('--no-sandbox', '--disable-setuid-sandbox');
+  }
   return await puppeteer.launch({
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    args,
   });
 }
 
 // 현재 프로젝트 캡처
-async function captureLocal(routes, options = { wcag: true }) {
+async function captureLocal(routes, options = { wcag: true, responsive: false }) {
   // 서버 상태 확인
   const serverStatus = await checkServer(CONFIG.baseUrl);
   if (!serverStatus.ok) {
@@ -181,53 +312,75 @@ async function captureLocal(routes, options = { wcag: true }) {
   console.log(`\nCapturing local project: ${CONFIG.baseUrl}`);
 
   const browser = await createBrowser();
-  const page = await browser.newPage();
-  await page.setViewport(CONFIG.viewport);
+  try {
+    const page = await browser.newPage();
 
-  const results = [];
-  let wcagReport = null;
+    // Console error 캡처 설정
+    const { consoleErrors, pageErrors } = setupConsoleCapture(page);
 
-  for (const route of routes) {
-    const url = CONFIG.baseUrl + route;
-    const filename = `current-${sanitizeRouteName(route)}.png`;
-    const filepath = path.join(CONFIG.outputDir, filename);
-    validatePathWithinDir(filepath, CONFIG.outputDir);
+    // 사용할 뷰포트 결정
+    const viewportsToUse = options.responsive
+      ? CONFIG.viewports
+      : [{ name: 'desktop', ...CONFIG.viewport }];
 
-    try {
-      console.log(`Capturing: ${url}`);
+    const results = [];
+    let wcagReport = null;
 
-      await withRetry(async () => {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: CONFIG.timeout,
-        });
-      });
+    for (const vp of viewportsToUse) {
+      await page.setViewport({ width: vp.width, height: vp.height });
+      const vpLabel = options.responsive ? `-${vp.name}` : '';
 
-      await sleep(CONFIG.waitTime);
-      await page.screenshot({ path: filepath, fullPage: CONFIG.fullPage });
-      console.log(`Saved: ${filename}`);
+      for (const route of routes) {
+        const url = CONFIG.baseUrl + route;
+        const filename = `current${vpLabel}-${sanitizeRouteName(route)}.png`;
+        const filepath = path.join(CONFIG.outputDir, filename);
+        validatePathWithinDir(filepath, CONFIG.outputDir);
 
-      // WCAG 체크 (첫 번째 라우트에서만 또는 모든 라우트)
-      if (options.wcag && route === routes[0]) {
-        console.log('Running WCAG accessibility check...');
-        wcagReport = await runAccessibilityCheck(page, url);
-        if (wcagReport) {
-          saveAccessibilityReport(wcagReport);
-          console.log(`  Violations: ${wcagReport.summary.violations}`);
-          console.log(`  Passes: ${wcagReport.summary.passes}`);
+        try {
+          console.log(`Capturing: ${url} (${vp.name}: ${vp.width}x${vp.height})`);
+
+          await withRetry(async () => {
+            await page.goto(url, {
+              waitUntil: 'networkidle0',
+              timeout: CONFIG.timeout,
+            });
+          });
+
+          await sleep(CONFIG.waitTime);
+          await page.screenshot({ path: filepath, fullPage: CONFIG.fullPage });
+          console.log(`Saved: ${filename}`);
+
+          // WCAG 체크 (desktop 뷰포트, 첫 번째 라우트에서만)
+          if (options.wcag && route === routes[0] && vp.name === 'desktop') {
+            console.log('Running WCAG accessibility check...');
+            wcagReport = await runAccessibilityCheck(page, url);
+            if (wcagReport) {
+              saveAccessibilityReport(wcagReport);
+              console.log(`  Violations: ${wcagReport.summary.violations}`);
+              console.log(`  Passes: ${wcagReport.summary.passes}`);
+            }
+          }
+
+          results.push({ route, viewport: vp.name, filename, success: true });
+
+        } catch (error) {
+          console.error(`Failed: ${url} - ${error.message}`);
+          results.push({ route, viewport: vp.name, filename, success: false, error: error.message });
         }
       }
-
-      results.push({ route, filename, success: true });
-
-    } catch (error) {
-      console.error(`Failed: ${url} - ${error.message}`);
-      results.push({ route, filename, success: false, error: error.message });
     }
-  }
 
-  await browser.close();
-  return { results, wcagReport };
+    // Console error 저장
+    saveConsoleErrors(consoleErrors, pageErrors);
+
+    // Design Health Score 산출
+    const healthScore = calculateDesignHealthScore(wcagReport, consoleErrors, pageErrors);
+    saveHealthScore(healthScore);
+
+    return { results, wcagReport, healthScore, consoleErrors: consoleErrors.length, pageErrors: pageErrors.length };
+  } finally {
+    await browser.close();
+  }
 }
 
 // 레퍼런스 URL 캡처 (여러 개 지원, 브라우저 재사용)
@@ -236,45 +389,66 @@ async function captureReferences(refs) {
   console.log(`\nCapturing ${refs.length} reference(s)`);
 
   const browser = await createBrowser();
-  const page = await browser.newPage();
-  await page.setViewport(CONFIG.viewport);
+  try {
+    const page = await browser.newPage();
+    await page.setViewport(CONFIG.viewport);
 
-  const results = [];
+    const results = [];
 
-  for (const { url, name } of refs) {
-    // Sanitize name to prevent path traversal
-    const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const filename = `reference-${safeName}.png`;
-    const filepath = path.join(CONFIG.outputDir, filename);
-    // Verify resolved path stays within outputDir
-    if (!path.resolve(filepath).startsWith(path.resolve(CONFIG.outputDir))) {
-      console.error(`Skipping reference: resolved path escapes output directory`);
-      continue;
-    }
+    for (const { url, name } of refs) {
+      // URL 검증: scheme + 내부 IP 차단 (SSRF 방지)
+      try {
+        const parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          console.error(`Skipping reference: unsupported protocol "${parsed.protocol}" (only http/https allowed)`);
+          continue;
+        }
+        const host = parsed.hostname.toLowerCase();
+        const blockedHosts = ['localhost', '127.0.0.1', '::1', '0.0.0.0', '169.254.169.254'];
+        const blockedPrefixes = ['10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.', '192.168.'];
+        if (blockedHosts.includes(host) || blockedPrefixes.some(p => host.startsWith(p))) {
+          console.error(`Skipping reference: internal/private address "${host}" blocked`);
+          continue;
+        }
+      } catch {
+        console.error(`Skipping reference: invalid URL "${url}"`);
+        continue;
+      }
+      // Sanitize name to prevent path traversal
+      const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `reference-${safeName}.png`;
+      const filepath = path.join(CONFIG.outputDir, filename);
+      // Verify resolved path stays within outputDir
+      if (!path.resolve(filepath).startsWith(path.resolve(CONFIG.outputDir))) {
+        console.error(`Skipping reference: resolved path escapes output directory`);
+        continue;
+      }
 
-    try {
-      console.log(`Capturing reference: ${url}`);
+      try {
+        console.log(`Capturing reference: ${url}`);
 
-      await withRetry(async () => {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: CONFIG.timeout,
+        await withRetry(async () => {
+          await page.goto(url, {
+            waitUntil: 'networkidle0',
+            timeout: CONFIG.timeout,
+          });
         });
-      });
 
-      await sleep(CONFIG.waitTime);
-      await page.screenshot({ path: filepath, fullPage: CONFIG.fullPage });
-      console.log(`Saved: ${filename}`);
-      results.push({ url, name, filename, success: true });
+        await sleep(CONFIG.waitTime);
+        await page.screenshot({ path: filepath, fullPage: CONFIG.fullPage });
+        console.log(`Saved: ${filename}`);
+        results.push({ url, name, filename, success: true });
 
-    } catch (error) {
-      console.error(`Failed: ${url} - ${error.message}`);
-      results.push({ url, name, filename, success: false, error: error.message });
+      } catch (error) {
+        console.error(`Failed: ${url} - ${error.message}`);
+        results.push({ url, name, filename, success: false, error: error.message });
+      }
     }
-  }
 
-  await browser.close();
-  return { results };
+    return { results };
+  } finally {
+    await browser.close();
+  }
 }
 
 // WCAG 체크만 수행
@@ -294,43 +468,48 @@ async function wcagOnly(routes) {
   console.log(`\nRunning WCAG check on: ${CONFIG.baseUrl}`);
 
   const browser = await createBrowser();
-  const page = await browser.newPage();
-  await page.setViewport(CONFIG.viewport);
+  try {
+    const page = await browser.newPage();
+    await page.setViewport(CONFIG.viewport);
 
-  const reports = [];
+    const reports = [];
+    const failures = [];
 
-  for (const route of routes) {
-    const url = CONFIG.baseUrl + route;
+    for (const route of routes) {
+      const url = CONFIG.baseUrl + route;
 
-    try {
-      console.log(`Checking: ${url}`);
+      try {
+        console.log(`Checking: ${url}`);
 
-      await withRetry(async () => {
-        await page.goto(url, {
-          waitUntil: 'networkidle0',
-          timeout: CONFIG.timeout,
+        await withRetry(async () => {
+          await page.goto(url, {
+            waitUntil: 'networkidle0',
+            timeout: CONFIG.timeout,
+          });
         });
-      });
 
-      await sleep(CONFIG.waitTime);
+        await sleep(CONFIG.waitTime);
 
-      const report = await runAccessibilityCheck(page, url);
-      if (report) {
-        const filename = `wcag-report-${sanitizeRouteName(route)}.json`;
-        saveAccessibilityReport(report, filename);
-        reports.push(report);
+        const report = await runAccessibilityCheck(page, url);
+        if (report) {
+          const filename = `wcag-report-${sanitizeRouteName(route)}.json`;
+          saveAccessibilityReport(report, filename);
+          reports.push(report);
 
-        console.log(`  Violations: ${report.summary.violations}`);
-        console.log(`  Passes: ${report.summary.passes}`);
+          console.log(`  Violations: ${report.summary.violations}`);
+          console.log(`  Passes: ${report.summary.passes}`);
+        }
+
+      } catch (error) {
+        console.error(`Failed: ${url} - ${error.message}`);
+        failures.push({ route, error: error.message });
       }
-
-    } catch (error) {
-      console.error(`Failed: ${url} - ${error.message}`);
     }
-  }
 
-  await browser.close();
-  return { reports };
+    return { reports, failures };
+  } finally {
+    await browser.close();
+  }
 }
 
 // ============================================
@@ -346,10 +525,11 @@ Usage:
   node capture.cjs ref <url> <name> [<url> <name> ...]
 
 Options:
-  --wcag        Include WCAG accessibility check (default)
-  --wcag-only   Run only WCAG check, no screenshots
-  --no-wcag     Skip WCAG check
-  --help, -h    Show this help
+  --wcag         Include WCAG accessibility check (default)
+  --wcag-only    Run only WCAG check, no screenshots
+  --no-wcag      Skip WCAG check
+  --responsive   Capture mobile (375x812), tablet (768x1024), desktop (1280x720)
+  --help, -h     Show this help
 
 Commands:
   (default)     Capture local project pages
@@ -390,7 +570,7 @@ Output:
 function printJsonResult(type, data) {
   let allSuccess;
   if (type === 'wcag' && data.reports) {
-    allSuccess = data.reports.length > 0;
+    allSuccess = data.reports.length > 0 && (!data.failures || data.failures.length === 0);
   } else {
     const results = data.results || data.screenshots || [];
     allSuccess = results.length > 0 && results.every(r => r.success !== false);
@@ -404,6 +584,7 @@ function printJsonResult(type, data) {
   console.log('\n--- JSON_RESULT_START ---');
   console.log(JSON.stringify(output, null, 2));
   console.log('--- JSON_RESULT_END ---');
+  return allSuccess;
 }
 
 async function main() {
@@ -411,6 +592,7 @@ async function main() {
 
   // 옵션 파싱
   let wcagMode = 'include'; // 'include', 'only', 'skip'
+  let responsive = false;
   const filteredArgs = [];
 
   for (const arg of args) {
@@ -420,6 +602,8 @@ async function main() {
       wcagMode = 'only';
     } else if (arg === '--no-wcag') {
       wcagMode = 'skip';
+    } else if (arg === '--responsive') {
+      responsive = true;
     } else if (arg === '--help' || arg === '-h') {
       printHelp();
       return;
@@ -432,10 +616,10 @@ async function main() {
     // 기본: 메인 페이지 캡처
     if (wcagMode === 'only') {
       const data = await wcagOnly(['/']);
-      printJsonResult('wcag', data);
+      if (!printJsonResult('wcag', data)) process.exitCode = 1;
     } else {
-      const data = await captureLocal(['/'], { wcag: wcagMode !== 'skip' });
-      printJsonResult('local', data);
+      const data = await captureLocal(['/'], { wcag: wcagMode !== 'skip', responsive });
+      if (!printJsonResult('local', data)) process.exitCode = 1;
     }
     return;
   }
@@ -455,17 +639,17 @@ async function main() {
     }
 
     const data = await captureReferences(refs);
-    printJsonResult('reference', data);
+    if (!printJsonResult('reference', data)) process.exitCode = 1;
     return;
   }
 
   // 로컬 라우트 캡처
   if (wcagMode === 'only') {
     const data = await wcagOnly(filteredArgs);
-    printJsonResult('wcag', data);
+    if (!printJsonResult('wcag', data)) process.exitCode = 1;
   } else {
-    const data = await captureLocal(filteredArgs, { wcag: wcagMode !== 'skip' });
-    printJsonResult('local', data);
+    const data = await captureLocal(filteredArgs, { wcag: wcagMode !== 'skip', responsive });
+    if (!printJsonResult('local', data)) process.exitCode = 1;
   }
 }
 
