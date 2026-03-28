@@ -230,6 +230,7 @@ Domains:
   color       Search 96 color palettes
   typography  Search 57 typography pairings
   stack       Search tech stack guides (requires --stack)
+  all         Search style + color + typography simultaneously
 
 Options:
   --domain <name>   Specify search domain
@@ -274,6 +275,13 @@ function main() {
       break;
     case 'stack':
       results = searchStack(args.query, args.stack, args.max);
+      break;
+    case 'all':
+      results = {
+        style: searchStyles(args.query, args.max),
+        color: searchColors(args.query, args.max),
+        typography: searchTypography(args.query, args.max)
+      };
       break;
     default:
       console.error(`Unknown domain: ${args.domain}`);

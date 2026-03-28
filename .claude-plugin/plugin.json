@@ -1,6 +1,6 @@
 {
   "name": "design-polish",
   "description": "Design reference-based polishing with WCAG accessibility checks. Trend search, Gap analysis, and improvement suggestions.",
-  "skills": ["./skills/design-polish", "./skills/design-renewal"],
+  "skills": ["./skills/design-polish", "./skills/design-renewal", "./skills/design-from-screenshot"],
   "commands": ["./commands"]
 }
