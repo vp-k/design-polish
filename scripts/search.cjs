@@ -276,13 +276,16 @@ function main() {
     case 'stack':
       results = searchStack(args.query, args.stack, args.max);
       break;
-    case 'all':
-      results = {
-        style: searchStyles(args.query, args.max),
-        color: searchColors(args.query, args.max),
-        typography: searchTypography(args.query, args.max)
+    case 'all': {
+      const allResults = {
+        style: { domain: 'style', results: searchStyles(args.query, args.max) },
+        color: { domain: 'color', results: searchColors(args.query, args.max) },
+        typography: { domain: 'typography', results: searchTypography(args.query, args.max) }
       };
-      break;
+      const output = { domain: 'all', query: args.query, results: allResults };
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
     default:
       console.error(`Unknown domain: ${args.domain}`);
       process.exit(1);
