@@ -50,6 +50,8 @@ version: "2.0.0"
     ↓
 1.8단계: Design Health Score 산출 + Regression 비교 [Read]
     ↓
+1.9단계: Pivot vs Refine 전략 판단 [판단 로직]
+    ↓  (Pivot 권고 시 → 사용자 확인 → /design-renewal 전환 가능)
 2단계: 레퍼런스 사이트 선택
     ↓
 3단계: 트렌드 검색 → 레퍼런스 캡처 [WebSearch, Bash]
@@ -320,6 +322,68 @@ Read(".design-polish/health-score.json")
 ```
 
 **Regression 감지**: 이전 점수 대비 하락 시 경고 표시. 개선안 도출 (5단계)에서 regression 원인 분석 우선 처리.
+
+---
+
+## 1.9단계: Pivot vs Refine 전략 판단
+
+**사용 도구**: 판단 로직 (도구 호출 없음)
+
+Health Score와 점수 추세를 기반으로 **현재 방향 개선(Refine)** vs **전면 리뉴얼(Pivot)** 을 자동 판단합니다.
+
+> 참고: [Anthropic Engineering — Harness Design for Long-Running Apps](https://www.anthropic.com/engineering/harness-design-long-running-apps)
+> "각 evaluation 후 generator는 전략적 결정을 내린다: 점수가 좋은 추세이면 현재 방향을 개선(Refine), 접근법이 작동하지 않으면 완전히 다른 미학으로 전환(Pivot)."
+
+### 판단 기준
+
+| 조건 | 결정 | 행동 |
+|------|------|------|
+| Score ≥ 60 **AND** (첫 실행 또는 이전 대비 상승) | **Refine** | 현재 design-polish 플로우 계속 (2~7단계) |
+| Score < 40 **OR** P1+P2 위반 합계 ≥ 5건 | **Pivot 권고** | 사용자에게 `/design-renewal` 전환 제안 |
+| 40 ≤ Score < 60 | **조건부 판단** | Gap 분석(4단계) 결과까지 확인 후 결정 |
+| 2회 이상 연속 실행 **AND** 점수 변화 ≤ ±3 (정체) | **Pivot 권고** | 점수 정체 → 방향 전환 필요 알림 |
+
+### 판단 흐름
+
+```
+health-score.json 읽기
+    ↓
+Score ≥ 60 + 상승/첫 실행?
+    ├─ YES → ✅ Refine — "현재 디자인 방향이 양호합니다. 세부 개선을 진행합니다."
+    │         → 2단계로 진행
+    └─ NO
+        ↓
+Score < 40 OR P1+P2 ≥ 5건?
+    ├─ YES → 🔄 Pivot 권고
+    │         → "Health Score [X]점, 핵심 위반 [N]건 — 현재 디자인 방향의 근본적 한계가 감지됩니다."
+    │         → "💡 `/design-renewal`로 전면 리뉴얼을 권장합니다. 계속 polish하시겠습니까?"
+    │         → 사용자 확인 대기
+    └─ NO (40~60 구간)
+        ↓
+2회+ 연속 AND 정체 (diff ≤ ±3)?
+    ├─ YES → 🔄 Pivot 권고
+    │         → "2회 이상 polish 후 점수 정체 ([이전]→[현재]) — 개선 한계에 도달한 것으로 보입니다."
+    │         → "💡 `/design-renewal`로 방향 전환을 권장합니다."
+    │         → 사용자 확인 대기
+    └─ NO → ⚠️ 조건부 Refine
+             → "Score [X]점 — 개선 여지가 있지만 제한적입니다. Gap 분석 후 최종 판단합니다."
+             → 2단계로 진행, 4단계 완료 후 재평가
+```
+
+### Pivot 권고 시 사용자 선택지
+
+사용자에게 다음 3가지 선택지를 제시합니다:
+
+1. **Pivot 수용** → `/design-renewal` 스킬로 전환 (현재 분석 결과를 인계)
+2. **강제 Refine** → 현재 플로우 계속 (사용자 판단 존중)
+3. **분석만 보기** → 6단계 결과 출력까지만 진행 (코드 변경 없음)
+
+### 조건부 Refine 시 4단계 후 재평가
+
+4단계(Gap 분석) 완료 후, Gap이 다음 조건을 만족하면 Pivot으로 전환 권고:
+- Gap 항목 중 **5개 이상이 "불일치"** 또는 **"대폭 변경 필요"**
+- 서비스 유형 적합성이 **"불일치"**
+- 스타일 매칭이 현재 디자인과 **근본적으로 다른 방향**을 제시
 
 ---
 
