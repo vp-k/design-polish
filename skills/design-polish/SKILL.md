@@ -2,7 +2,7 @@
 name: design-polish
 description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 66개 스타일/96개 색상/57개 타이포 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.1.0"
+version: "2.2.0"
 ---
 
 # 디자인 폴리싱 스킬 v2.0
@@ -64,6 +64,8 @@ version: "2.1.0"
     ↓
 7단계: 코드 적용 (--apply 시) [Edit, Bash]
     ↓
+8단계: 적용 후 검증 루프 (close-the-loop) [Bash, Read]  ← --apply 시에만
+    ↓  (Health Score 재측정 → before/after diff → 하락 시 경고/롤백)
 Pre-delivery 체크리스트
 ```
 
@@ -165,6 +167,22 @@ node --version
 | 스타일 | `**/*.css`, `**/*.scss`, `**/tailwind.config.*` |
 | 레이아웃 | `**/layout.*`, `**/App.*`, `**/page.*`, `**/_app.*` |
 
+### 라우트 자동 발견 (캡처 대상 선정)
+
+캡처 라우트를 수동 나열하지 말고, 프로젝트 구조에서 실제 라우트를 자동 발견합니다 (Glob):
+
+| 프레임워크 | 라우트 소스 | 매핑 규칙 |
+|-----------|------------|----------|
+| Next.js (App Router) | `app/**/page.{tsx,jsx,js}` | `app/about/page.tsx` → `/about` |
+| Next.js (Pages Router) | `pages/**/*.{tsx,jsx,js}` (`_app`/`_document`/API 제외) | `pages/about.tsx` → `/about` |
+| Nuxt | `pages/**/*.vue` | `pages/about.vue` → `/about` |
+| SvelteKit | `src/routes/**/+page.svelte` | `src/routes/about/+page.svelte` → `/about` |
+| React Router | 라우터 설정 파일에서 `path=` Grep | 정적 경로만 추출 |
+
+**선정 규칙**: 동적 세그먼트(`[id]`, `:id`, `[...slug]`)는 제외(예시 값 없이는 캡처 불가), 최대 5개 라우트로 제한(항상 `/` 포함), 우선순위는 `/` → 최상위 정적 라우트 순.
+
+발견된 라우트를 아래 캡처 스크립트 인자로 전달합니다. 발견 실패 시 `/`만 캡처합니다.
+
 ### 현재 디자인 스크린샷 캡처
 
 **Bash로 캡처 스크립트 실행:**
@@ -185,9 +203,13 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" --responsive / /about
 
 **자동 부산물**:
 - `.design-polish/accessibility/console-errors.json` — JS 콘솔 에러/경고 캡처
-- `.design-polish/health-score.json` — Design Health Score (0-100) + regression 비교
+- `.design-polish/accessibility/wcag-report.json` — desktop WCAG
+- `.design-polish/accessibility/wcag-report-mobile.json` — mobile(375×812) WCAG
+- `.design-polish/accessibility/touch-targets.json` — 44×44px 미달 인터랙티브 요소 목록
+- `.design-polish/health-score.json` — Design Health Score (0-100) + breakdown + regression + 측정 원자료(styleMetrics/perfMetrics)
+- `.design-polish/health-history.jsonl` — append-only 점수 이력 (정체 판단·추세 분석용)
 
-**참고**: WCAG 접근성 체크는 desktop 뷰포트(1280×720)에서만 실행됩니다. `--wcag-only` 모드도 동일하게 desktop 뷰포트만 사용합니다. 모바일 전용 접근성 이슈(터치 타겟 크기 등)는 수동 점검이 필요합니다.
+**참고 (v2.2.0)**: WCAG 체크는 **desktop + mobile 두 뷰포트**에서 실행되며, 모바일 패스에서 **터치 타겟(44×44px)이 자동 계측**됩니다. `--wcag-only` 모드는 desktop만 사용합니다. styleFit·performance는 더 이상 고정 상수가 아니라 **렌더된 DOM 계측값으로 실측**됩니다(아래 1.8단계).
 
 ### 캡처 후 Read로 이미지 분석
 
@@ -222,7 +244,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" --wcag /
 | 색상 대비 | 대형 텍스트 대비 | 3:1 (AA) |
 | 색상 대비 | UI 컴포넌트 대비 | 3:1 |
 | 텍스트 크기 | 최소 텍스트 크기 | 12px 이상 권장 |
-| 터치 타겟 | 최소 타겟 크기 | 44x44px (수동 점검 필요) |
+| 터치 타겟 | 최소 타겟 크기 | 44x44px (모바일 패스 자동 계측 → touch-targets.json) |
 | 링크 | 링크 구분 | 밑줄 또는 3:1 대비 |
 
 ### 결과 저장
@@ -298,13 +320,17 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 
 ### Health Score 산출 기준 (가중 점수 0-100)
 
+**v2.2.0부터 styleFit·performance가 실측값입니다** (더 이상 고정 상수 아님). 계측=`page.evaluate`, 스코어 환산=순수 함수(`scoreConsistency`/`scorePerformance`)로 분리되어 결정적입니다.
+
 | 카테고리 | 가중치 | 산출 방법 |
 |----------|--------|-----------|
 | WCAG Critical | 30% | critical 위반 1건당 -10 |
 | WCAG Serious | 20% | serious 위반 1건당 -5 |
 | Console Errors | 20% | JS 에러 1건당 -5 |
-| Style Fit | 15% | (현재 기본값, 향후 지식 기반 분석으로 확장) |
-| Performance | 15% | (현재 기본값, 향후 Lighthouse 연동으로 확장) |
+| **Style Fit** | 15% | **렌더 DOM 일관성 실측** — distinct 값 난립(폰트/라운딩/색상/여백/그림자) 감점. 표본<10이면 미측정(7점) |
+| **Performance** | 15% | **navigation/paint/resource timing 실측** — FCP·요청수·전송량 감점. FCP 측정 실패 시 감점 |
+
+> styleFit 임계값(폰트 ≤3종, border-radius ≤5종, 색상 ≤24종, spacing ≤12종, shadow ≤6종)은 휴리스틱이며 `scripts/capture.cjs`의 `scoreConsistency`에서 조정 가능합니다.
 
 ### 결과 확인
 
@@ -316,12 +342,17 @@ Read(".design-polish/health-score.json")
 ```json
 {
   "score": 75,
-  "breakdown": { "wcagCritical": 20, "wcagSerious": 15, "consoleErrors": 20, "styleFit": 15, "performance": 15 },
+  "breakdown": { "wcagCritical": 20, "wcagSerious": 15, "consoleErrors": 20, "styleFit": 11, "performance": 14 },
+  "styleScore": { "score": 11, "insufficient": false, "detail": { "fontFamily": { "count": 5, "healthy": 3, "penalty": 3 } } },
+  "perfMetrics": { "fcp": 1200, "requestCount": 34, "transferBytes": 812345 },
+  "touchTargets": { "totalInteractive": 22, "undersized": 3 },
   "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression" }
 }
 ```
 
-**Regression 감지**: 이전 점수 대비 하락 시 경고 표시. 개선안 도출 (5단계)에서 regression 원인 분석 우선 처리.
+**Regression 감지**: `health-history.jsonl`의 직전 회차 대비 하락 시 경고. 개선안 도출(5단계)에서 regression 원인 분석 우선 처리.
+
+**정체(stagnation) 판단**: `health-history.jsonl`에서 **동일 `mode`+`route` 라인만 필터링**해 최근 2~3개를 비교하고, 점수 변화 ≤±3이 연속되면 1.9단계 Pivot 권고 근거로 사용합니다. (서로 다른 라우트/측정 모드 라인을 섞으면 점수 상한이 달라 오신호가 나므로 반드시 같은 조건끼리 비교.)
 
 ---
 
@@ -641,6 +672,50 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 
 - [ ] Framer Motion 설치 필요 (애니메이션)
 ```
+
+---
+
+## 8단계: 적용 후 검증 루프 (close-the-loop)
+
+**사용 도구**: `Bash`, `Read`
+**조건**: `--apply`로 코드를 실제 변경한 경우에만 수행 (분석 전용 실행은 생략)
+
+개선안을 적용했다면 **적용이 실제로 점수를 올렸는지 같은 실행 안에서 검증**합니다. 이 단계가 없으면 "적용했지만 더 나빠졌다"를 다음 실행 전까지 알 수 없습니다.
+
+### 절차
+
+```
+7단계 코드 적용 완료
+    ↓
+개발 서버가 변경을 반영하도록 대기 (HMR/재빌드) — 필요 시 사용자에게 리로드 확인
+    ↓
+캡처 재실행 — 0단계와 ★완전히 동일한 플래그·라우트★로 실행
+    node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" <0단계와 동일한 라우트 목록>
+    (0단계에서 --no-wcag 였다면 재캡처도 반드시 --no-wcag, --responsive 였다면 재캡처도 --responsive)
+    ↓
+Read(".design-polish/health-score.json") → regression 필드 확인
+```
+
+> **⚠️ 플래그를 반드시 일치시켜야 하는 이유**: `--no-wcag` 실행은 WCAG 항목(50%)이 구조적으로 0점이라 점수 상한이 50점이고, full 실행은 100점이다. baseline과 재캡처의 **측정 모드가 다르면 diff가 무의미**하며 거짓 improved/regression을 낸다. capture.cjs는 이력 라인에 `mode`(full/no-wcag)·`route`를 태깅하고 **동일 mode+route 라인만 baseline으로 선택**하므로, 모드/라우트가 다르면 regression이 `null`로 나온다(오판 대신 "비교 불가"로 안전 처리). regression이 null이면 "동일 조건 baseline 없음"이니 같은 플래그로 재실행했는지 먼저 점검한다.
+
+**regression은 `health-history.jsonl`의 동일 mode+route 직전 회차(=적용 전 캡처) 대비 diff**입니다. 적용 전 0단계 캡처가 baseline이 되고, 8단계 재캡처가 그와 비교됩니다.
+
+### 판정
+
+| regression.status | 의미 | 행동 |
+|-------------------|------|------|
+| `improved` (diff > 0) | 적용이 점수를 올림 | ✅ 완료 보고 (before→after 명시) |
+| `unchanged` (diff = 0) | 점수 변화 없음 | ⚠️ 시각적 개선은 있었는지 스크린샷 재확인, 결과 보고 |
+| `regression` (diff < 0) | **적용이 점수를 떨어뜨림** | 🔻 원인 분석 → 아래 롤백 절차 |
+
+### 하락 시 롤백
+
+1. `health-score.json`의 `breakdown`에서 **어느 항목이 떨어졌는지** 식별 (예: wcagCritical ↓ = 대비 회귀, styleFit ↓ = 값 난립 증가)
+2. 해당 항목을 유발한 변경만 되돌림 (git diff로 방금 적용분 확인 → 문제 변경 revert)
+3. 되돌린 뒤 캡처를 한 번 더 실행해 baseline 수준으로 복귀했는지 확인
+4. 사용자에게 "적용 X건 중 N건이 회귀를 유발해 되돌림" 명시 보고
+
+> **원칙**: before/after 점수를 반드시 함께 보고합니다. "개선했다"는 주장은 점수 상승 증거(improved diff)로만 뒷받침합니다.
 
 ---
 

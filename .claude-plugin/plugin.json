@@ -1,7 +1,7 @@
 {
   "name": "design-polish",
-  "version": "2.1.0",
-  "description": "Design reference-based polishing with WCAG accessibility checks. Trend search, Gap analysis, and improvement suggestions.",
+  "version": "2.2.0",
+  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification, route auto-discovery.",
   "author": {
     "name": "user01"
   },

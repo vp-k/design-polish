@@ -1,4 +1,4 @@
-# design-polish v2.0
+# design-polish v2.2
 
 Claude Code plugin for design intelligence-driven polishing.
 Combines built-in design knowledge base + visual comparison + WCAG accessibility checks + trend search.
@@ -12,9 +12,19 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 - **BM25 Search Engine** — Node.js search across all design data (no Python dependency)
 - **Screenshot Capture** — Puppeteer-based local project capture
 - **Reference Site Search** — Mobbin, Godly, Dribbble, SiteInspire, etc.
-- **WCAG Accessibility** — axe-core based automated checks
+- **WCAG Accessibility** — axe-core based automated checks (desktop + mobile viewport)
 - **8-Level Priority System** — P1 (CRITICAL) to P8 (LOW) improvements
 - **Auto-Apply** — Code improvements with `--apply` flag
+
+### Measurement engine (v2.2.0)
+
+- **Measured Health Score** — `styleFit`/`performance` are now real measurements, not fixed constants. Browser instrumentation (`page.evaluate`) is split from deterministic pure scorers (`scoreConsistency`/`scorePerformance`), so scoring is reproducible and unit-tested (`npm test`, 16 cases).
+- **Style consistency** — rendered-DOM computed-style distribution (distinct fonts/radii/colors/spacing/shadows) → `styleFit` score, framework-agnostic.
+- **Performance** — navigation/paint/resource timing (FCP, request count, transfer size) → `performance` score.
+- **Mobile a11y pass** — second axe-core run at 375×812 + automatic touch-target audit (interactive elements < 44×44px).
+- **Close-the-loop verification** — after `--apply`, capture is re-run and the before/after Health Score diff is checked in the same run; regression triggers rollback (renewal auto-creates a `design-renewal-backup` branch first).
+- **Append-only history** — `health-history.jsonl` enables regression & stagnation detection across runs.
+- **Route auto-discovery** — capture targets are discovered from framework routing (Next/Nuxt/SvelteKit/React Router) instead of hand-listed.
 
 ## Directory Structure
 
@@ -131,15 +141,19 @@ Output is JSON:
 ## Workflow
 
 ```
-0. Project analysis + service type detection + screenshot
-1. WCAG accessibility check (axe-core)
+0. Project analysis + service type detection + route auto-discovery + screenshot
+   + style/perf measurement (desktop) + mobile a11y pass (touch targets)
+1. WCAG accessibility check (axe-core, desktop + mobile)
 1.5. Design knowledge loading (Read + search.cjs)
+1.8. Design Health Score (measured styleFit + performance) + regression/stagnation
+1.9. Pivot vs Refine strategy decision
 2. Reference site selection
 3. Trend search + reference capture
 4. Gap analysis (visual + knowledge-based)
 5. Improvement plan (8-level priority)
 6. Result output
 7. Code apply (--apply)
+8. Close-the-loop verification — re-capture, before/after diff, rollback on regression
 ```
 
 ## Priority System
@@ -170,11 +184,16 @@ Output is JSON:
 
 ```
 .design-polish/
+├── health-score.json           # latest score + breakdown + regression + metrics
+├── health-history.jsonl        # append-only score history
 ├── screenshots/
 │   ├── current-main.png
 │   └── reference-*.png
 └── accessibility/
-    └── wcag-report.json
+    ├── wcag-report.json         # desktop
+    ├── wcag-report-mobile.json  # mobile
+    ├── touch-targets.json       # undersized interactive elements
+    └── console-errors.json
 ```
 
 ## Environment Variables
@@ -186,6 +205,7 @@ Output is JSON:
 | A11Y_DIR | .design-polish/accessibility | Accessibility report directory |
 | WAIT_TIME | 2000 | Wait time after page load (ms) |
 | TIMEOUT | 30000 | Page load timeout (ms) |
+| RETRIES | 2 | Navigation retry count |
 | FULL_PAGE | false | Capture full page |
 
 ## Data Sources

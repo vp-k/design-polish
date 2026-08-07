@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 // design-polish plugin - capture script with WCAG accessibility checks
+//
+// Measurement engine:
+//   - WCAG (axe-core): desktop + mobile viewport
+//   - Console/page errors
+//   - Style consistency (rendered-DOM computed-style distribution → styleFit score)
+//   - Performance (Navigation/Paint/Resource timing → performance score)
+//   - Touch-target audit (mobile viewport, interactive elements < 44x44)
+//   - Design Health Score (0-100) with regression + append-only history
+//
+// 스코어 산출은 브라우저 계측(collect*)과 순수 함수(score*)로 분리되어 있어,
+// 순수 함수는 puppeteer 없이 단위 테스트가 가능하다 (tests/scoring.test.cjs).
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 // ============================================
 // 유틸리티
@@ -39,11 +49,106 @@ const CONFIG = {
     { name: 'tablet', width: 768, height: 1024 },
     { name: 'desktop', width: 1280, height: 720 },
   ],
+  mobileViewport: { width: 375, height: 812 },
   waitTime: Math.max(0, parseInt(process.env.WAIT_TIME, 10) || 2000),
   timeout: Math.max(1, parseInt(process.env.TIMEOUT, 10) || 30000),
   retries: Math.max(0, parseInt(process.env.RETRIES, 10) || 2),
   fullPage: process.env.FULL_PAGE === 'true' || false,
 };
+
+// ============================================
+// 순수 스코어러 (브라우저 불필요 — 단위 테스트 대상)
+// ============================================
+
+// 일관성 스코어 (styleFit, 0-15).
+// 잘 설계된 디자인 시스템은 distinct 값이 제한적이다. 값이 난립할수록 감점.
+// 임계값은 휴리스틱이며 조정 가능 (tunable). sampled 부족 시 만점 방지.
+function scoreConsistency(m) {
+  const detail = {};
+  if (!m || !m.sampled || m.sampled < 10) {
+    // 측정 표본 부족 — 빈/오류 페이지가 '일관적'으로 만점을 얻는 것을 방지.
+    return { score: 7, insufficient: true, sampled: (m && m.sampled) || 0, detail };
+  }
+  let penalty = 0;
+  const add = (name, count, healthy, weight) => {
+    const over = Math.max(0, count - healthy);
+    const p = over * weight;
+    detail[name] = { count, healthy, penalty: Math.round(p * 100) / 100 };
+    penalty += p;
+  };
+  add('fontFamily', m.fontFamilyCount || 0, 3, 1.5);
+  add('borderRadius', m.borderRadiusCount || 0, 5, 0.5);
+  add('color', m.colorCount || 0, 24, 0.2);
+  add('spacing', m.spacingCount || 0, 12, 0.3);
+  add('shadow', m.shadowCount || 0, 6, 0.5);
+  const score = Math.max(0, Math.min(15, 15 - penalty));
+  return { score: Math.round(score * 100) / 100, insufficient: false, sampled: m.sampled, detail };
+}
+
+// 성능 스코어 (0-15). Puppeteer navigation/paint/resource timing 기반.
+function scorePerformance(p) {
+  if (!p) return { score: 7, insufficient: true, detail: {} };
+  const detail = {};
+  let penalty = 0;
+
+  // FCP: <=1800ms 양호, ~3000ms 보통, >3000ms 나쁨 (최대 -8)
+  if (p.fcp == null) {
+    penalty += 5; // 측정 실패 — 만점 방지
+    detail.fcp = { value: null, penalty: 5 };
+  } else {
+    let fp = 0;
+    if (p.fcp > 1800) fp = p.fcp <= 3000 ? ((p.fcp - 1800) / 1200) * 4 : 4 + Math.min(4, ((p.fcp - 3000) / 2000) * 4);
+    detail.fcp = { value: p.fcp, penalty: Math.round(fp * 100) / 100 };
+    penalty += fp;
+  }
+
+  // 요청 수: >50개부터 감점 (최대 -4)
+  const rc = p.requestCount || 0;
+  const rp = Math.min(4, Math.max(0, rc - 50) * 0.05);
+  detail.requestCount = { value: rc, penalty: Math.round(rp * 100) / 100 };
+  penalty += rp;
+
+  // 전송량: >1.5MB부터 감점 (최대 -4). localhost/캐시로 0이면 감점 없음.
+  const mb = (p.transferBytes || 0) / (1024 * 1024);
+  const bp = Math.min(4, Math.max(0, mb - 1.5) * 1.5);
+  detail.transferBytes = { value: p.transferBytes || 0, penalty: Math.round(bp * 100) / 100 };
+  penalty += bp;
+
+  const score = Math.max(0, Math.min(15, 15 - penalty));
+  return { score: Math.round(score * 100) / 100, insufficient: false, detail };
+}
+
+// Design Health Score (가중 0-100).
+// styleScore/perfScore는 collect* 계측을 score*로 환산한 값 (0-15). 미제공 시 측정 미수행으로 간주.
+function calculateDesignHealthScore(wcagReport, consoleErrors, pageErrors, styleScore, perfScore) {
+  const breakdown = {};
+
+  // WCAG Critical: 30% / Serious: 20%
+  if (wcagReport) {
+    const criticalViolations = wcagReport.violations.filter(v => v.impact === 'critical').length;
+    const seriousViolations = wcagReport.violations.filter(v => v.impact === 'serious').length;
+    breakdown.wcagCritical = Math.max(0, 30 - (criticalViolations * 10));
+    breakdown.wcagSerious = Math.max(0, 20 - (seriousViolations * 5));
+  } else {
+    // WCAG 데이터 없음 — 검사 미수행이므로 0점 (만점 부여 방지)
+    breakdown.wcagCritical = 0;
+    breakdown.wcagSerious = 0;
+  }
+
+  // Console errors: 20%
+  const errorCount = (consoleErrors || []).filter(e => e.type === 'error').length + (pageErrors || []).length;
+  breakdown.consoleErrors = Math.max(0, 20 - (errorCount * 5));
+
+  // Style fit: 15% — 실측 일관성 스코어 (미제공 시 미측정 → 0)
+  breakdown.styleFit = typeof styleScore === 'number' ? Math.max(0, Math.min(15, styleScore)) : 0;
+
+  // Performance: 15% — 실측 성능 스코어 (미제공 시 미측정 → 0)
+  breakdown.performance = typeof perfScore === 'number' ? Math.max(0, Math.min(15, perfScore)) : 0;
+
+  const score = Object.values(breakdown).reduce((sum, v) => sum + v, 0);
+
+  return { score: Math.max(0, Math.min(100, Math.round(score))), breakdown };
+}
 
 // ============================================
 // 의존성 로드
@@ -52,18 +157,20 @@ const CONFIG = {
 let puppeteer;
 let AxePuppeteer;
 
-try {
-  puppeteer = require('puppeteer');
-} catch (e) {
-  console.error('Puppeteer not found. Run: npm install');
-  process.exit(1);
-}
+function loadDeps() {
+  try {
+    puppeteer = require('puppeteer');
+  } catch (e) {
+    console.error('Puppeteer not found. Run: npm install');
+    process.exit(1);
+  }
 
-try {
-  AxePuppeteer = require('@axe-core/puppeteer').AxePuppeteer;
-} catch (e) {
-  console.warn('axe-core/puppeteer not found. WCAG checks will be skipped.');
-  AxePuppeteer = null;
+  try {
+    AxePuppeteer = require('@axe-core/puppeteer').AxePuppeteer;
+  } catch (e) {
+    console.warn('axe-core/puppeteer not found. WCAG checks will be skipped.');
+    AxePuppeteer = null;
+  }
 }
 
 // ============================================
@@ -164,6 +271,103 @@ function saveAccessibilityReport(report, filename = 'wcag-report.json') {
 }
 
 // ============================================
+// 브라우저 계측 (collect*) — page.evaluate 기반
+// ============================================
+
+// 렌더된 DOM의 computed-style 분포를 수집 → 일관성 원자료.
+// 프레임워크 무관 (Tailwind/CSS Modules/styled-components 모두 렌더 결과는 동일).
+async function collectStyleMetrics(page) {
+  try {
+    return await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('body *'));
+      const rad = new Set(), fonts = new Set(), colors = new Set(), space = new Set(), shadow = new Set();
+      let sampled = 0;
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue; // 숨김/미표시 제외
+        const cs = getComputedStyle(el);
+        sampled++;
+        const br = cs.borderTopLeftRadius;
+        if (br && br !== '0px') rad.add(br);
+        if (cs.fontFamily) fonts.add(cs.fontFamily.split(',')[0].trim().toLowerCase().replace(/["']/g, ''));
+        if (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') colors.add(cs.color);
+        if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)') colors.add(cs.backgroundColor);
+        for (const p of [cs.paddingTop, cs.paddingLeft, cs.marginTop, cs.marginLeft, cs.rowGap, cs.columnGap]) {
+          if (p && p !== '0px' && p !== 'normal') space.add(p);
+        }
+        if (cs.boxShadow && cs.boxShadow !== 'none') shadow.add(cs.boxShadow);
+      }
+      return {
+        sampled,
+        borderRadiusCount: rad.size,
+        fontFamilyCount: fonts.size,
+        colorCount: colors.size,
+        spacingCount: space.size,
+        shadowCount: shadow.size,
+        fontFamilies: Array.from(fonts).slice(0, 20),
+        borderRadiusValues: Array.from(rad).slice(0, 20),
+      };
+    });
+  } catch (error) {
+    console.error(`Style metrics failed: ${error.message}`);
+    return null;
+  }
+}
+
+// Navigation/Paint/Resource timing 수집 → 성능 원자료.
+async function collectPerfMetrics(page) {
+  try {
+    return await page.evaluate(() => {
+      const nav = performance.getEntriesByType('navigation')[0] || {};
+      const paints = performance.getEntriesByType('paint') || [];
+      const fcpEntry = paints.find(p => p.name === 'first-contentful-paint');
+      const res = performance.getEntriesByType('resource') || [];
+      let bytes = 0;
+      for (const r of res) bytes += (r.transferSize || 0);
+      return {
+        fcp: fcpEntry ? Math.round(fcpEntry.startTime) : null,
+        domContentLoaded: nav.domContentLoadedEventEnd ? Math.round(nav.domContentLoadedEventEnd) : null,
+        load: nav.loadEventEnd ? Math.round(nav.loadEventEnd) : null,
+        requestCount: res.length,
+        transferBytes: bytes,
+      };
+    });
+  } catch (error) {
+    console.error(`Perf metrics failed: ${error.message}`);
+    return null;
+  }
+}
+
+// 모바일 뷰포트 터치 타겟 감사 (WCAG 2.5.5 / 2.1 AA 44x44px).
+async function collectTouchTargets(page) {
+  try {
+    return await page.evaluate(() => {
+      const sel = 'a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [tabindex]:not([tabindex="-1"])';
+      const els = Array.from(document.querySelectorAll(sel));
+      const small = [];
+      let visible = 0;
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        visible++;
+        if (r.width < 44 || r.height < 44) {
+          small.push({
+            tag: el.tagName.toLowerCase(),
+            w: Math.round(r.width),
+            h: Math.round(r.height),
+            text: (el.textContent || '').trim().slice(0, 40),
+          });
+        }
+      }
+      return { totalInteractive: visible, undersized: small.length, samples: small.slice(0, 15) };
+    });
+  } catch (error) {
+    console.error(`Touch target audit failed: ${error.message}`);
+    return null;
+  }
+}
+
+// ============================================
 // Console Error 캡처
 // ============================================
 
@@ -213,73 +417,90 @@ function saveConsoleErrors(consoleErrors, pageErrors) {
 }
 
 // ============================================
-// Design Health Score 산출
+// Design Health Score 저장 + 이력
 // ============================================
 
-function calculateDesignHealthScore(wcagReport, consoleErrors, pageErrors) {
-  let score = 100;
-  const breakdown = {};
-
-  // WCAG Critical: 30% weight
-  if (wcagReport) {
-    const criticalViolations = wcagReport.violations.filter(v => v.impact === 'critical').length;
-    const seriousViolations = wcagReport.violations.filter(v => v.impact === 'serious').length;
-    breakdown.wcagCritical = Math.max(0, 30 - (criticalViolations * 10));
-    breakdown.wcagSerious = Math.max(0, 20 - (seriousViolations * 5));
-  } else {
-    // WCAG 데이터 없음 — 검사 미수행이므로 0점 (만점 부여 방지)
-    breakdown.wcagCritical = 0;
-    breakdown.wcagSerious = 0;
+// 이전 회차와 비교할 baseline은 health-history.jsonl에서 읽는다
+// (health-score.json은 매 실행 덮어써지므로, 이번 실행 직전 상태를 반영하지 못함).
+// mode/route가 주어지면 동종 라인만 baseline으로 선택한다 — 측정 모드(full vs no-wcag)나
+// 라우트가 다르면 점수 상한이 달라 diff가 무의미하고, 크로스 모드 오판(거짓 improved/regression)을
+// 낸다. 뒤에서부터 순회하며 첫 유효·동종 라인을 채택(손상된 마지막 줄 내성).
+function readPreviousScore(mode, route) {
+  const fp = path.join(process.cwd(), '.design-polish', 'health-history.jsonl');
+  try {
+    if (!fs.existsSync(fp)) return null;
+    const lines = fs.readFileSync(fp, 'utf-8').split('\n').filter(l => l.trim());
+    for (let i = lines.length - 1; i >= 0; i--) {
+      let entry;
+      try { entry = JSON.parse(lines[i]); } catch (_) { continue; }
+      if (typeof entry.score !== 'number') continue;
+      if (mode != null && entry.mode !== mode) continue;   // 동일 측정 모드만
+      if (route != null && entry.route !== route) continue; // 동일 라우트만
+      return entry.score;
+    }
+    return null;
+  } catch (_) {
+    return null;
   }
-
-  // Console errors: 20% weight
-  const errorCount = (consoleErrors || []).filter(e => e.type === 'error').length + (pageErrors || []).length;
-  breakdown.consoleErrors = Math.max(0, 20 - (errorCount * 5));
-
-  // Style fit placeholder: 15%
-  breakdown.styleFit = 15;
-
-  // Performance placeholder: 15%
-  breakdown.performance = 15;
-
-  score = Object.values(breakdown).reduce((sum, v) => sum + v, 0);
-
-  return { score: Math.max(0, Math.min(100, score)), breakdown };
 }
 
-function saveHealthScore(healthScore) {
+function appendHealthHistory(report) {
+  const dir = path.join(process.cwd(), '.design-polish');
+  ensureDir(dir);
+  const fp = path.join(dir, 'health-history.jsonl');
+  validatePathWithinDir(fp, dir);
+  const line = JSON.stringify({
+    timestamp: report.timestamp,
+    score: report.score,
+    breakdown: report.breakdown,
+    mode: report.mode,
+    route: report.route,
+  }) + '\n';
+  fs.appendFileSync(fp, line);
+}
+
+function saveHealthScore(healthScore, extras = {}, meta = {}) {
   const healthScoreDir = path.join(process.cwd(), '.design-polish');
   ensureDir(healthScoreDir);
   const filepath = path.join(healthScoreDir, 'health-score.json');
   validatePathWithinDir(filepath, healthScoreDir);
 
-  // Regression baseline 비교
+  const mode = meta.mode || 'full';
+  const route = meta.route || '/';
+
+  // Regression baseline 비교 — 이력 파일에서 동일 mode+route 직전 회차 기준 (append 전에 읽음)
+  const previousScore = readPreviousScore(mode, route);
   let regression = null;
-  const resolvedPath = path.resolve(filepath);
-  if (fs.existsSync(resolvedPath)) {
-    try {
-      const prev = JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
-      const diff = healthScore.score - (prev.score || 0);
-      regression = {
-        previousScore: prev.score || 0,
-        currentScore: healthScore.score,
-        diff,
-        status: diff < 0 ? 'regression' : diff > 0 ? 'improved' : 'unchanged',
-      };
-    } catch (_) { /* ignore parse errors */ }
+  if (previousScore != null) {
+    const diff = healthScore.score - previousScore;
+    regression = {
+      previousScore,
+      currentScore: healthScore.score,
+      diff,
+      status: diff < 0 ? 'regression' : diff > 0 ? 'improved' : 'unchanged',
+      mode,
+      route,
+    };
   }
 
   const report = {
     ...healthScore,
+    ...extras,
+    mode,
+    route,
     timestamp: new Date().toISOString(),
     regression,
   };
 
-  fs.writeFileSync(resolvedPath, JSON.stringify(report, null, 2));
+  fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
+  appendHealthHistory(report);
+
   console.log(`Design Health Score: ${healthScore.score}/100`);
+  console.log(`  breakdown: wcagCritical ${report.breakdown.wcagCritical}, wcagSerious ${report.breakdown.wcagSerious}, console ${report.breakdown.consoleErrors}, styleFit ${report.breakdown.styleFit}, performance ${report.breakdown.performance}`);
   if (regression) {
     console.log(`  ${regression.status}: ${regression.previousScore} → ${regression.currentScore} (${regression.diff >= 0 ? '+' : ''}${regression.diff})`);
   }
+  return report;
 }
 
 // ============================================
@@ -325,6 +546,9 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
 
     const results = [];
     let wcagReport = null;
+    let styleMetrics = null;
+    let perfMetrics = null;
+    const primaryRoute = routes[0];
 
     for (const vp of viewportsToUse) {
       await page.setViewport({ width: vp.width, height: vp.height });
@@ -350,14 +574,18 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
           await page.screenshot({ path: filepath, fullPage: CONFIG.fullPage });
           console.log(`Saved: ${filename}`);
 
-          // WCAG 체크 (desktop 뷰포트, 첫 번째 라우트에서만)
-          if (options.wcag && route === routes[0] && vp.name === 'desktop') {
-            console.log('Running WCAG accessibility check...');
-            wcagReport = await runAccessibilityCheck(page, url);
-            if (wcagReport) {
-              saveAccessibilityReport(wcagReport);
-              console.log(`  Violations: ${wcagReport.summary.violations}`);
-              console.log(`  Passes: ${wcagReport.summary.passes}`);
+          // 데스크톱 + 기본 라우트에서 WCAG / 스타일 / 성능 계측
+          if (route === primaryRoute && vp.name === 'desktop') {
+            styleMetrics = await collectStyleMetrics(page);
+            perfMetrics = await collectPerfMetrics(page);
+            if (options.wcag) {
+              console.log('Running WCAG accessibility check (desktop)...');
+              wcagReport = await runAccessibilityCheck(page, url);
+              if (wcagReport) {
+                saveAccessibilityReport(wcagReport);
+                console.log(`  Violations: ${wcagReport.summary.violations}`);
+                console.log(`  Passes: ${wcagReport.summary.passes}`);
+              }
             }
           }
 
@@ -370,14 +598,71 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
       }
     }
 
+    // 모바일 접근성 패스 — 터치 타겟 감사 + 모바일 axe (기본 라우트)
+    let touchTargets = null;
+    let wcagMobile = null;
+    if (options.wcag) {
+      try {
+        await page.setViewport({ ...CONFIG.mobileViewport, isMobile: true, hasTouch: true });
+        const mUrl = CONFIG.baseUrl + primaryRoute;
+        console.log(`Mobile a11y pass: ${mUrl} (375x812)`);
+        await withRetry(async () => {
+          await page.goto(mUrl, { waitUntil: 'networkidle0', timeout: CONFIG.timeout });
+        });
+        await sleep(CONFIG.waitTime);
+        touchTargets = await collectTouchTargets(page);
+        if (touchTargets) {
+          console.log(`  Touch targets: ${touchTargets.undersized}/${touchTargets.totalInteractive} undersized (<44px)`);
+        }
+        wcagMobile = await runAccessibilityCheck(page, mUrl);
+        if (wcagMobile) {
+          saveAccessibilityReport(wcagMobile, 'wcag-report-mobile.json');
+          console.log(`  Mobile violations: ${wcagMobile.summary.violations}`);
+        }
+        if (touchTargets) {
+          ensureDir(CONFIG.accessibilityDir);
+          const tfp = path.join(CONFIG.accessibilityDir, 'touch-targets.json');
+          validatePathWithinDir(tfp, CONFIG.accessibilityDir);
+          fs.writeFileSync(tfp, JSON.stringify({ timestamp: new Date().toISOString(), ...touchTargets }, null, 2));
+        }
+      } catch (error) {
+        console.error(`Mobile a11y pass failed: ${error.message}`);
+      }
+    }
+
     // Console error 저장
     saveConsoleErrors(consoleErrors, pageErrors);
 
-    // Design Health Score 산출
-    const healthScore = calculateDesignHealthScore(wcagReport, consoleErrors, pageErrors);
-    saveHealthScore(healthScore);
+    // 스코어 환산
+    const consistency = scoreConsistency(styleMetrics);
+    const perf = scorePerformance(perfMetrics);
 
-    return { results, wcagReport, healthScore, consoleErrors: consoleErrors.length, pageErrors: pageErrors.length };
+    // Design Health Score 산출 + 이력
+    const healthScore = calculateDesignHealthScore(
+      wcagReport, consoleErrors, pageErrors, consistency.score, perf.score
+    );
+    const savedReport = saveHealthScore(healthScore, {
+      styleMetrics,
+      styleScore: consistency,
+      perfMetrics,
+      perfScore: perf,
+      touchTargets,
+      wcagMobileViolations: wcagMobile ? wcagMobile.summary.violations : null,
+    }, {
+      // 측정 모드/라우트를 이력에 태깅 → 재캡처(8단계) 시 동종 baseline만 비교
+      mode: options.wcag ? 'full' : 'no-wcag',
+      route: primaryRoute,
+    });
+
+    return {
+      results,
+      wcagReport,
+      wcagMobile,
+      healthScore: savedReport,
+      touchTargets,
+      consoleErrors: consoleErrors.length,
+      pageErrors: pageErrors.length,
+    };
   } finally {
     await browser.close();
   }
@@ -418,8 +703,10 @@ async function captureReferences(refs) {
       const safeName = name.replace(/[^a-zA-Z0-9_-]/g, '_');
       const filename = `reference-${safeName}.png`;
       const filepath = path.join(CONFIG.outputDir, filename);
-      // Verify resolved path stays within outputDir
-      if (!path.resolve(filepath).startsWith(path.resolve(CONFIG.outputDir))) {
+      // Verify resolved path stays within outputDir (validatePathWithinDir로 통일 — 형제 디렉토리 prefix 오탐 방지)
+      try {
+        validatePathWithinDir(filepath, CONFIG.outputDir);
+      } catch (_) {
         console.error(`Skipping reference: resolved path escapes output directory`);
         continue;
       }
@@ -527,7 +814,7 @@ Usage:
 Options:
   --wcag         Include WCAG accessibility check (default)
   --wcag-only    Run only WCAG check, no screenshots
-  --no-wcag      Skip WCAG check
+  --no-wcag      Skip WCAG check (also skips mobile a11y + touch audit)
   --responsive   Capture mobile (375x812), tablet (768x1024), desktop (1280x720)
   --help, -h     Show this help
 
@@ -535,15 +822,23 @@ Commands:
   (default)     Capture local project pages
   ref           Capture external reference URLs
 
+Measurement (default local run):
+  - Screenshot (desktop, or all viewports with --responsive)
+  - WCAG axe-core: desktop + mobile viewport
+  - Style consistency (rendered computed-style distribution) → styleFit score
+  - Performance (navigation/paint/resource timing) → performance score
+  - Touch-target audit (mobile, interactive elements < 44x44px)
+  - Design Health Score (0-100) + regression vs previous run + append history
+
 Examples:
-  # Local project with WCAG
-  node capture.cjs /                     # Main page + WCAG
+  # Local project with full measurement
+  node capture.cjs /                     # Main page
   node capture.cjs / /about /pricing     # Multiple pages
 
   # WCAG only
   node capture.cjs --wcag-only /
 
-  # No WCAG
+  # No WCAG (screenshot + style + perf only)
   node capture.cjs --no-wcag /
 
   # References
@@ -555,15 +850,23 @@ Environment Variables:
   A11Y_DIR     Accessibility report directory (default: .design-polish/accessibility)
   WAIT_TIME    Wait time after page load in ms (default: 2000)
   TIMEOUT      Page load timeout in ms (default: 30000)
+  RETRIES      Navigation retry count (default: 2)
   FULL_PAGE    Capture full page (default: false)
 
 Output:
+  (health-score.json / health-history.jsonl are always written to <cwd>/.design-polish,
+   regardless of OUTPUT_DIR / A11Y_DIR — those only relocate screenshots / a11y reports.)
   .design-polish/
+  ├── health-score.json          # latest score + breakdown + regression + metrics
+  ├── health-history.jsonl       # append-only score history (mode/route tagged; stagnation detection)
   ├── screenshots/
   │   ├── current-main.png
   │   └── reference-*.png
   └── accessibility/
-      └── wcag-report.json
+      ├── wcag-report.json        # desktop
+      ├── wcag-report-mobile.json # mobile
+      ├── touch-targets.json      # undersized interactive elements
+      └── console-errors.json
 `);
 }
 
@@ -588,6 +891,7 @@ function printJsonResult(type, data) {
 }
 
 async function main() {
+  loadDeps();
   const args = process.argv.slice(2);
 
   // 옵션 파싱
@@ -653,7 +957,20 @@ async function main() {
   }
 }
 
-main().catch(error => {
-  console.error('Fatal error:', error.message);
-  process.exit(1);
-});
+// 순수 함수는 puppeteer 없이 테스트 가능하도록 export.
+// main()은 직접 실행(require.main)일 때만 구동.
+module.exports = {
+  scoreConsistency,
+  scorePerformance,
+  calculateDesignHealthScore,
+  sanitizeRouteName,
+  validatePathWithinDir,
+  readPreviousScore,
+};
+
+if (require.main === module) {
+  main().catch(error => {
+    console.error('Fatal error:', error.message);
+    process.exit(1);
+  });
+}

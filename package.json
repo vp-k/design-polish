@@ -1,6 +1,6 @@
 {
   "name": "design-polish",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Design intelligence-driven polishing with knowledge base, visual comparison, and WCAG accessibility checks for Claude Code",
   "private": true,
   "type": "commonjs",
@@ -10,6 +10,7 @@
   },
   "scripts": {
     "capture": "node scripts/capture.cjs",
+    "test": "node tests/scoring.test.cjs",
     "postinstall": "echo Design-polish plugin installed successfully"
   },
   "dependencies": {
