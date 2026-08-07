@@ -2,7 +2,7 @@
 name: design-renewal
 description: 디자인 전면 리뉴얼. 디자인 시스템 교체 수준의 대규모 변경. 색상 팔레트/타이포그래피/컴포넌트/레이아웃 전면 교체. 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "1.1.0"
+version: "1.2.0"
 ---
 
 # 디자인 리뉴얼 스킬 v1.0
@@ -212,13 +212,28 @@ transition:     fast: Xms, normal: Xms, slow: Xms
 
 전면 교체는 되돌리기 비용이 크므로 **적용 전 백업(롤백 지점)을 반드시 확보**합니다.
 
-0. **적용 전 백업 지점 생성** (v1.1.0 — 필수, 아래 "적용 전 백업" 절차)
+0. **적용 전 baseline 캡처 + 백업 지점 생성** (v1.2.0 — 필수, 아래 "적용 전 baseline 캡처"·"적용 전 백업" 절차)
 1. **기능 코드(비즈니스 로직)는 절대 변경하지 않음** — 스타일/UI 코드만 변경
 2. **적용 전 변경 예정 파일 목록을 사용자에게 확인받음** (6단계에서 완료)
 3. **각 파일 수정 전 반드시 Read로 현재 내용 확인**
 4. **한 파일씩 순차 적용** — 중간에 문제 발생 시 중단 가능
 
-### 적용 전 백업 (7단계 진입 직전)
+### 적용 전 baseline 캡처 (7단계 진입 직전 — 백업보다 먼저)
+
+close-the-loop(적용 후 검증)가 성립하려면 **전면 적용 전에 동일 조건 baseline이 이력에 있어야** 합니다. baseline이 없으면 적용 후 `regression=null`("비교 불가")로 떨어져 점수 기반 회귀 판정이 불가능해집니다. 따라서 리뉴얼은 백업 직전에 baseline 캡처를 **반드시 1회 실행**합니다:
+
+```bash
+# 리뉴얼 前 현재 디자인의 Health Score를 health-history.jsonl에 남긴다.
+# ★적용 후 재캡처(8단계)와 반드시 동일한 플래그로 실행★ — mode(full/no-wcag)와
+#   primaryRoute가 일치해야 readPreviousScore가 같은 baseline을 선택한다.
+node scripts/capture.cjs   # design-polish 1.8단계와 동일 호출 (BASE_URL 등 환경변수 동일)
+```
+
+- **동일 플래그 원칙**: 서버가 떠 있어 WCAG까지 도는 조건(`full`)으로 baseline을 남겼으면, 8단계 재캡처도 같은 조건으로 돌린다. baseline을 `--no-wcag`로 남기고 적용 후 `full`로 재면 mode 불일치로 비교가 무효가 된다(H1 방지 배선).
+- baseline 캡처가 실패(서버 미기동 등)하면 **적용을 진행하되**, close-the-loop는 "비교 불가"로 보고하고 롤백 판단을 전적으로 백업 지점에 의존한다는 사실을 사용자에게 고지한다.
+- 캡처 산출물(`.design-polish/health-history.jsonl`)이 baseline으로 append되었는지 확인 후 백업 단계로 진행한다.
+
+### 적용 전 백업 (baseline 캡처 직후)
 
 전면 교체는 **커밋되지 않은 원본까지 유실**시킬 수 있으므로, 브랜치 하나만으로는 부족합니다. 다음 순서를 **강제**합니다:
 
@@ -263,7 +278,7 @@ fi
 
 ### 적용 후 검증 루프 (close-the-loop)
 
-design-polish SKILL의 **8단계(close-the-loop)** 를 그대로 따릅니다: 전면 적용 후 캡처를 재실행하여 `health-score.json`의 regression을 확인하고, `regression`이 하락(diff < 0)이면 백업 지점으로 롤백을 검토합니다. before/after 점수를 반드시 함께 보고합니다.
+design-polish SKILL의 **8단계(close-the-loop)** 를 그대로 따릅니다: 전면 적용 후 캡처를 **"적용 전 baseline 캡처"와 동일한 플래그로** 재실행하여 `health-score.json`의 regression을 확인하고, `regression`이 하락(diff < 0)이면 백업 지점으로 롤백을 검토합니다. `regression`이 `null`이면 baseline 캡처가 누락됐거나 mode/route가 어긋난 것이므로 점수 판정 대신 백업 기반 수동 검토로 전환합니다. before/after 점수를 반드시 함께 보고합니다.
 
 ### 적용 범위 (design-polish와의 차이)
 

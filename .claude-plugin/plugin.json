@@ -1,7 +1,7 @@
 {
   "name": "design-polish",
-  "version": "2.2.0",
-  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification, route auto-discovery.",
+  "version": "2.3.0",
+  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification (renewal auto-captures pre-apply baseline), route auto-discovery.",
   "author": {
     "name": "user01"
   },
