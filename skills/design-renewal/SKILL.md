@@ -2,7 +2,7 @@
 name: design-renewal
 description: 디자인 전면 리뉴얼. 디자인 시스템 교체 수준의 대규모 변경. 색상 팔레트/타이포그래피/컴포넌트/레이아웃 전면 교체. 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "1.2.0"
+version: "1.3.0"
 ---
 
 # 디자인 리뉴얼 스킬 v1.0
@@ -224,12 +224,13 @@ close-the-loop(적용 후 검증)가 성립하려면 **전면 적용 전에 동�
 
 ```bash
 # 리뉴얼 前 현재 디자인의 Health Score를 health-history.jsonl에 남긴다.
-# ★적용 후 재캡처(8단계)와 반드시 동일한 플래그로 실행★ — mode(full/no-wcag)와
+# ★적용 후 재캡처(8단계)와 반드시 동일한 플래그·동일 cwd로 실행★ — mode(full/no-wcag)와
 #   primaryRoute가 일치해야 readPreviousScore가 같은 baseline을 선택한다.
 node scripts/capture.cjs   # design-polish 1.8단계와 동일 호출 (BASE_URL 등 환경변수 동일)
 ```
 
 - **동일 플래그 원칙**: 서버가 떠 있어 WCAG까지 도는 조건(`full`)으로 baseline을 남겼으면, 8단계 재캡처도 같은 조건으로 돌린다. baseline을 `--no-wcag`로 남기고 적용 후 `full`로 재면 mode 불일치로 비교가 무효가 된다(H1 방지 배선).
+- **동일 cwd 원칙**: 이력 파일은 `<cwd>/.design-polish/health-history.jsonl`에 저장되고 `readPreviousScore`도 현재 cwd에서 읽는다. baseline 캡처와 8단계 재캡처를 **같은 작업 디렉토리에서** 실행해야 baseline이 조회된다(다른 폴더에서 돌리면 regression=null).
 - baseline 캡처가 실패(서버 미기동 등)하면 **적용을 진행하되**, close-the-loop는 "비교 불가"로 보고하고 롤백 판단을 전적으로 백업 지점에 의존한다는 사실을 사용자에게 고지한다.
 - 캡처 산출물(`.design-polish/health-history.jsonl`)이 baseline으로 append되었는지 확인 후 백업 단계로 진행한다.
 
@@ -250,14 +251,15 @@ git status --porcelain
 ```
 
 - **깨끗함(출력 없음)**: HEAD가 곧 원본 → 아래 3)에서 브랜치 스냅샷으로 충분.
-- **미커밋 변경 있음**: 브랜치는 HEAD만 담고 미커밋 원본을 보호하지 못한다. 파일 스냅샷을 **먼저** 남긴다:
+- **미커밋 변경 있음**: 브랜치는 HEAD만 담고 미커밋 원본을 보호하지 못한다. 스냅샷을 **먼저** 남긴다:
   ```bash
-  # 미커밋 변경을 포함한 완전한 스냅샷 (working tree 커밋 오브젝트, 브랜치/인덱스 미변경)
+  # 추적 중인 미커밋 변경(modified/staged)의 스냅샷 커밋 오브젝트 (브랜치/인덱스 미변경)
   STASH=$(git stash create "design-renewal pre-apply snapshot")
-  # STASH가 비어있지 않으면 그 커밋 해시를 사용자에게 롤백 지점으로 고지
-  # (git stash store로 보존하거나, 아래 파일 복사 백업을 병행)
+  # STASH가 비어있으면(=추적 변경 없음) 아무것도 안 만들어진다.
+  # 생성됐다면 GC로 사라지지 않도록 즉시 참조로 고정하고 사용자에게 롤백 지점으로 고지:
+  [ -n "$STASH" ] && git stash store -m "design-renewal pre-apply" "$STASH"
   ```
-  스냅샷 커밋 해시를 확보하지 못하면 파일 복사 백업(아래 non-git 절차)을 **병행**한다.
+  > **⚠️ `git stash create`는 추적(tracked) 파일만 담는다** — untracked/ignored 원본은 포함되지 않고, 커밋 오브젝트는 참조가 없으면 GC 대상이다(그래서 위에서 `git stash store`로 고정). 따라서 **변경 예정 파일 중 untracked인 원본이 있으면**, 아래 non-git 절차의 파일 복사 백업(`.design-polish/renewal-backup/<타임스탬프>/`)을 **반드시 병행**한다. 추적 파일만 있고 stash가 정상 생성됐어도, 확실히 하려면 파일 복사 백업을 함께 두는 편이 안전하다.
 
 ```bash
 # 3) 백업 브랜치 — 기존 백업을 파괴하지 않도록 -f 금지. 존재하면 타임스탬프 접미사로 신규 생성
@@ -274,7 +276,8 @@ fi
 
 **롤백 방법 고지** (적용 시작 전 사용자에게 명시):
 - 커밋 상태였던 파일: `git restore --source=design-renewal-backup -- <경로>`
-- 미커밋 상태였던 원본: 위 2)의 stash 스냅샷 커밋에서 복원(`git checkout <snapshot-hash> -- <경로>`) 또는 파일 복사 백업에서 복원.
+- 미커밋(추적) 원본: `git stash store`로 고정한 스냅샷에서 복원 — `git stash list`로 확인 후 `git checkout <snapshot-hash> -- <경로>`.
+- untracked였던 원본: stash에 없으므로 **파일 복사 백업**(`.design-polish/renewal-backup/<타임스탬프>/`)에서만 복원 가능.
 
 ### 적용 후 검증 루프 (close-the-loop)
 

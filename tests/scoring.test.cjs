@@ -12,6 +12,8 @@ const {
   scoreConsistency,
   scorePerformance,
   calculateDesignHealthScore,
+  dedupeErrors,
+  classifyRegression,
   sanitizeRouteName,
   readPreviousScore,
 } = require('../scripts/capture.cjs');
@@ -123,6 +125,46 @@ test('health: score는 0~100로 클램프', () => {
   assert.ok(r.score >= 0 && r.score <= 100);
 });
 
+test('health: NaN styleScore/perfScore는 0으로 처리(L1 — NaN 전파 차단)', () => {
+  const wcag = { violations: [] };
+  const r = calculateDesignHealthScore(wcag, [], [], NaN, NaN);
+  assert.strictEqual(r.breakdown.styleFit, 0);
+  assert.strictEqual(r.breakdown.performance, 0);
+  assert.ok(Number.isFinite(r.score));
+});
+
+// ── dedupeErrors (H1 — 다중 네비게이션 누적 중복 카운트 방지) ──
+test('dedupeErrors: 동일 (type,text)는 1건으로 압축(타임스탬프 무관)', () => {
+  const errs = [
+    { type: 'error', text: 'boom', timestamp: 't1' },
+    { type: 'error', text: 'boom', timestamp: 't2' }, // 모바일 재방문 중복
+    { type: 'error', text: 'other', timestamp: 't3' },
+    { type: 'warning', text: 'boom', timestamp: 't4' }, // type 다름 → 별개
+  ];
+  const out = dedupeErrors(errs, (e) => `${e.type} ${e.text}`);
+  assert.strictEqual(out.length, 3);
+});
+
+test('dedupeErrors: 중복 압축이 consoleErrors 점수 왜곡을 막는다', () => {
+  const wcag = { violations: [] };
+  // 지속적 에러 1건이 desktop+mobile 2회 로드로 2번 기록된 상황
+  const raw = [
+    { type: 'error', text: 'failed fetch', timestamp: 't1' },
+    { type: 'error', text: 'failed fetch', timestamp: 't2' },
+  ];
+  const deduped = dedupeErrors(raw, (e) => `${e.type} ${e.text}`);
+  const naive = calculateDesignHealthScore(wcag, raw, [], 15, 15);
+  const fixed = calculateDesignHealthScore(wcag, deduped, [], 15, 15);
+  // 중복 카운트: consoleErrors 20-2*5=10 / 압축 후: 20-1*5=15
+  assert.strictEqual(naive.breakdown.consoleErrors, 10);
+  assert.strictEqual(fixed.breakdown.consoleErrors, 15);
+});
+
+test('dedupeErrors: null/빈 입력 안전', () => {
+  assert.deepStrictEqual(dedupeErrors(null, (e) => e), []);
+  assert.deepStrictEqual(dedupeErrors([], (e) => e), []);
+});
+
 // ── readPreviousScore (baseline 선택 — H1/M1 회귀 방지) ──
 function withHistory(lines, fn) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dp-hist-'));
@@ -165,6 +207,25 @@ test('readPreviousScore: 이력 없으면 null', () => {
   process.chdir(tmp);
   try { assert.strictEqual(readPreviousScore('full', '/'), null); }
   finally { process.chdir(cwd); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// ── classifyRegression (M1 — dead-band으로 지터성 오판 방지) ──
+test('classifyRegression: ±3 이내는 unchanged로 흡수', () => {
+  assert.strictEqual(classifyRegression(0), 'unchanged');
+  assert.strictEqual(classifyRegression(-2), 'unchanged'); // 지터성 미세 하락
+  assert.strictEqual(classifyRegression(3), 'unchanged');
+  assert.strictEqual(classifyRegression(-3), 'unchanged');
+});
+
+test('classifyRegression: 밴드 초과만 improved/regression', () => {
+  assert.strictEqual(classifyRegression(4), 'improved');
+  assert.strictEqual(classifyRegression(-4), 'regression');
+  assert.strictEqual(classifyRegression(20), 'improved');
+});
+
+test('classifyRegression: NaN/비유한(Infinity)은 안전하게 unchanged', () => {
+  assert.strictEqual(classifyRegression(NaN), 'unchanged');
+  assert.strictEqual(classifyRegression(Infinity), 'unchanged'); // Number.isFinite=false → 판정 보류
 });
 
 // ── sanitizeRouteName ──

@@ -2,7 +2,7 @@
 name: design-polish
 description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 66개 스타일/96개 색상/57개 타이포 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.2.0"
+version: "2.4.0"
 ---
 
 # 디자인 폴리싱 스킬 v2.0
@@ -702,11 +702,14 @@ Read(".design-polish/health-score.json") → regression 필드 확인
 
 ### 판정
 
+`status`는 capture.cjs가 **dead-band(±3)** 을 적용해 결정론적으로 산출합니다. perf 계측(FCP·전송량)은 캐시/네트워크 지터로 실행마다 1~2점 흔들리므로, `|diff| ≤ 3`은 노이즈로 보고 `unchanged`로 흡수해 **거짓 regression에 의한 불필요한 롤백을 방지**합니다(정체 판단의 ±3 밴드와 동일).
+
 | regression.status | 의미 | 행동 |
 |-------------------|------|------|
-| `improved` (diff > 0) | 적용이 점수를 올림 | ✅ 완료 보고 (before→after 명시) |
-| `unchanged` (diff = 0) | 점수 변화 없음 | ⚠️ 시각적 개선은 있었는지 스크린샷 재확인, 결과 보고 |
-| `regression` (diff < 0) | **적용이 점수를 떨어뜨림** | 🔻 원인 분석 → 아래 롤백 절차 |
+| `improved` (diff > +3) | 적용이 점수를 유의하게 올림 | ✅ 완료 보고 (before→after 명시) |
+| `unchanged` (\|diff\| ≤ 3) | 유의미한 변화 없음(지터 흡수) | ⚠️ 시각적 개선은 있었는지 스크린샷 재확인, 결과 보고 |
+| `regression` (diff < -3) | **적용이 점수를 유의하게 떨어뜨림** | 🔻 원인 분석 → 아래 롤백 절차 |
+| `null` | 동일 mode+route baseline 없음 | ⚠️ "비교 불가" — 같은 플래그·같은 cwd로 재실행했는지 점검 |
 
 ### 하락 시 롤백
 

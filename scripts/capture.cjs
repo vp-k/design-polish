@@ -139,11 +139,11 @@ function calculateDesignHealthScore(wcagReport, consoleErrors, pageErrors, style
   const errorCount = (consoleErrors || []).filter(e => e.type === 'error').length + (pageErrors || []).length;
   breakdown.consoleErrors = Math.max(0, 20 - (errorCount * 5));
 
-  // Style fit: 15% — 실측 일관성 스코어 (미제공 시 미측정 → 0)
-  breakdown.styleFit = typeof styleScore === 'number' ? Math.max(0, Math.min(15, styleScore)) : 0;
+  // Style fit: 15% — 실측 일관성 스코어 (미제공/NaN 시 미측정 → 0)
+  breakdown.styleFit = Number.isFinite(styleScore) ? Math.max(0, Math.min(15, styleScore)) : 0;
 
-  // Performance: 15% — 실측 성능 스코어 (미제공 시 미측정 → 0)
-  breakdown.performance = typeof perfScore === 'number' ? Math.max(0, Math.min(15, perfScore)) : 0;
+  // Performance: 15% — 실측 성능 스코어 (미제공/NaN 시 미측정 → 0)
+  breakdown.performance = Number.isFinite(perfScore) ? Math.max(0, Math.min(15, perfScore)) : 0;
 
   const score = Object.values(breakdown).reduce((sum, v) => sum + v, 0);
 
@@ -396,6 +396,24 @@ function setupConsoleCapture(page) {
   return { consoleErrors, pageErrors };
 }
 
+// 신원(타임스탬프 제외) 기준 중복 제거.
+// console 리스너는 페이지 인스턴스에 1회 부착돼 모든 page.goto에 걸쳐 누적되므로,
+// 반응형 다중 뷰포트 캡처나 모바일 재방문(primaryRoute 2회 로드) 시 "지속적 에러 1건"이
+// 여러 번 push된다. 스코어링에 그대로 쓰면 errorCount가 부풀려져 consoleErrors 항목이
+// 실제보다 낮게(심하면 0으로) 왜곡된다 → 스코어링 직전에만 신원 기준으로 압축한다.
+// (원본 배열은 saveConsoleErrors가 진단용으로 그대로 보존)
+function dedupeErrors(errors, keyFn) {
+  const seen = new Set();
+  const out = [];
+  for (const e of (errors || [])) {
+    const key = keyFn(e);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(e);
+  }
+  return out;
+}
+
 function saveConsoleErrors(consoleErrors, pageErrors) {
   if (consoleErrors.length === 0 && pageErrors.length === 0) return;
 
@@ -459,6 +477,19 @@ function appendHealthHistory(report) {
   fs.appendFileSync(fp, line);
 }
 
+// 회귀 판정 dead-band — perf 계측(FCP/transferBytes)은 캐시/네트워크 지터로
+// 실행마다 1~2점 흔들릴 수 있다. 무변경인데 지터로 diff<0가 나면 거짓 regression →
+// 좋은 변경을 롤백하는 오판이 생긴다. 정체(stagnation) 판단과 동일한 ±3 밴드를 적용해
+// |diff| ≤ REGRESSION_TOLERANCE는 'unchanged'로 흡수한다. (판정=스크립트, 결정론적)
+const REGRESSION_TOLERANCE = 3;
+
+function classifyRegression(diff, tolerance = REGRESSION_TOLERANCE) {
+  if (!Number.isFinite(diff)) return 'unchanged';
+  if (diff > tolerance) return 'improved';
+  if (diff < -tolerance) return 'regression';
+  return 'unchanged';
+}
+
 function saveHealthScore(healthScore, extras = {}, meta = {}) {
   const healthScoreDir = path.join(process.cwd(), '.design-polish');
   ensureDir(healthScoreDir);
@@ -477,7 +508,9 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
       previousScore,
       currentScore: healthScore.score,
       diff,
-      status: diff < 0 ? 'regression' : diff > 0 ? 'improved' : 'unchanged',
+      // dead-band(±3) 적용 — 지터성 미세 하락을 거짓 regression으로 오판하지 않음
+      status: classifyRegression(diff),
+      tolerance: REGRESSION_TOLERANCE,
       mode,
       route,
     };
@@ -638,8 +671,11 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
     const perf = scorePerformance(perfMetrics);
 
     // Design Health Score 산출 + 이력
+    // 스코어링 전 중복 제거 — 지속적 에러가 뷰포트/모바일 재방문마다 중복 카운트되는 것 방지
+    const scoredConsole = dedupeErrors(consoleErrors, (e) => `${e.type} ${e.text}`);
+    const scoredPage = dedupeErrors(pageErrors, (e) => e.message || '');
     const healthScore = calculateDesignHealthScore(
-      wcagReport, consoleErrors, pageErrors, consistency.score, perf.score
+      wcagReport, scoredConsole, scoredPage, consistency.score, perf.score
     );
     const savedReport = saveHealthScore(healthScore, {
       styleMetrics,
@@ -963,6 +999,8 @@ module.exports = {
   scoreConsistency,
   scorePerformance,
   calculateDesignHealthScore,
+  dedupeErrors,
+  classifyRegression,
   sanitizeRouteName,
   validatePathWithinDir,
   readPreviousScore,
