@@ -1,4 +1,4 @@
-# design-polish v2.2
+# design-polish v2.5
 
 Claude Code plugin for design intelligence-driven polishing.
 Combines built-in design knowledge base + visual comparison + WCAG accessibility checks + trend search.
@@ -15,6 +15,15 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 - **WCAG Accessibility** — axe-core based automated checks (desktop + mobile viewport)
 - **8-Level Priority System** — P1 (CRITICAL) to P8 (LOW) improvements
 - **Auto-Apply** — Code improvements with `--apply` flag
+
+### Design contract (v2.5.0)
+
+- **Design contract** — `.design-polish/DESIGN.md` (why) + `.design-polish/design-decisions.json` (what is allowed). Every token value traces back to a decision ID (`DD-NNN`); values with no decision behind them are reported as rule failures. `/design-renewal` now **persists** the design system it derives instead of re-deriving it every run. (If `docs/DESIGN.md` already exists — an auto-complete-loop planning artifact — that document is updated instead of creating a second character contract.)
+- **Token drift lint with ratchet** — `DP-T001..005` compare computed styles against the contract. On first contract run the existing violations are frozen into `token-baseline.json`; afterwards only *new* violations are escalated to CRITICAL (-2 each) while baseline residue applies mild pressure (-0.1 each). Brownfield adoption does not deadlock.
+- **Korean typography rules** — `DP-K001..003`: serif-fallback stacks that silently render Hangul in Myeongjo, missing `word-break: keep-all` on long paragraphs, excessive negative tracking.
+- **Component state contract** — `DP-S001..003`: focus visibility measured by actually focusing the element and diffing computed style (WCAG 2.4.7), opacity-only disabled states, missing `cursor: pointer` on custom clickables.
+- **Numbered rule IDs** — every finding cites a stable ID (`knowledge/failure-rules.md`). UX rules and component checklist items are numbered too (`DP-U###`, `DP-C###`), so reports can be diffed run over run instead of re-arguing taste.
+- **Scoring-mode tagging** — history entries record `styleMode` (contract/heuristic) and baselines are only compared within the same mode, so adopting a contract never produces a false regression.
 
 ### Measurement engine (v2.2.0)
 
@@ -33,7 +42,8 @@ plugins/design-polish/
 ├── knowledge/                    # Markdown — direct Read()
 │   ├── industry-rules.md         # 20 service type UI reasoning rules
 │   ├── component-checklist.md    # 6 component Do/Don't checklists
-│   └── ux-rules.md               # 52+ UX rules across 6 categories
+│   ├── ux-rules.md               # 52 UX rules across 6 categories (DP-U###)
+│   └── failure-rules.md          # Rule ID registry (DP-T/K/S/A/U/C)
 ├── data/                         # JSON — BM25 searchable
 │   ├── styles.json               # 66 design styles
 │   ├── colors.json               # 96 color palettes (with HEX codes)
@@ -41,6 +51,7 @@ plugins/design-polish/
 │   └── stacks.json               # 13 tech stack guides
 ├── scripts/
 │   ├── capture.cjs               # Puppeteer screenshot + axe-core
+│   ├── design-contract.cjs       # Contract loading + pure lint (token drift / ko typo / state)
 │   └── search.cjs                # BM25 search engine (Node.js)
 ├── skills/
 │   ├── design-polish/
@@ -50,6 +61,10 @@ plugins/design-polish/
 ├── commands/
 │   ├── design-polish.md          # Polish command definition
 │   └── design-renewal.md         # Renewal command definition
+├── templates/
+│   ├── DESIGN.md                 # Design contract template (product character → decisions)
+│   └── design-decisions.json     # Machine-checked token contract template
+├── tests/                        # 68 unit tests (npm test) — pure scorers & lints
 ├── package.json
 └── README.md
 ```

@@ -201,6 +201,28 @@ test('readPreviousScore: 손상된 마지막 줄은 건너뛰고 이전 유효 �
   });
 });
 
+test('readPreviousScore: styleMode가 다르면 baseline으로 쓰지 않는다 (계약 도입 시 거짓 회귀 차단)', () => {
+  withHistory([
+    JSON.stringify({ score: 90, mode: 'full', route: '/', styleMode: 'heuristic' }),
+    JSON.stringify({ score: 70, mode: 'full', route: '/', styleMode: 'contract' }),
+  ], () => {
+    assert.strictEqual(readPreviousScore('full', '/', 'contract'), 70);
+    assert.strictEqual(readPreviousScore('full', '/', 'heuristic'), 90);
+  });
+});
+
+test('readPreviousScore: styleMode 없는 구 이력은 heuristic으로 간주(하위호환)', () => {
+  withHistory([
+    JSON.stringify({ score: 88, mode: 'full', route: '/' }),   // v2.4 이하 라인
+  ], () => {
+    assert.strictEqual(readPreviousScore('full', '/', 'heuristic'), 88);
+    // 계약 도입 첫 회차는 비교 대상이 없다 → null (거짓 regression 방지)
+    assert.strictEqual(readPreviousScore('full', '/', 'contract'), null);
+    // styleMode 미지정 호출은 기존 동작 유지
+    assert.strictEqual(readPreviousScore('full', '/'), 88);
+  });
+});
+
 test('readPreviousScore: 이력 없으면 null', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dp-empty-'));
   const cwd = process.cwd();

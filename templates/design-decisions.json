@@ -1,0 +1,81 @@
+{
+  "$comment": "디자인 계약 — .design-polish/design-decisions.json 으로 복사해 채운다. DESIGN.md의 결정 표와 1:1 동기화할 것. tokens에 넣은 값만 UI에 등장할 수 있고, 그 밖의 값은 DP-T00x 위반으로 잡힌다.",
+  "version": 1,
+  "rootFontSizePx": 16,
+
+  "decisions": [
+    {
+      "id": "DD-009",
+      "title": "기본 팔레트",
+      "value": "#0F172A / #FFFFFF / #3B82F6",
+      "rationale": "원칙 DD-001(정보 밀도) — 강한 대비로 밀도를 확보한다",
+      "provenance": "user-fact"
+    },
+    {
+      "id": "DD-011",
+      "title": "spacing 스케일",
+      "value": "4/8/12/16/24/32/48px",
+      "rationale": "8pt grid. 4px는 아이콘 정렬 전용",
+      "provenance": "assumption: 8pt grid 관례"
+    },
+    {
+      "id": "DD-014",
+      "title": "border-radius 스케일",
+      "value": "8px/12px/9999px",
+      "rationale": "전문성 톤 — 과하게 둥근 모서리 배제",
+      "provenance": "assumption: 톤 스펙트럼 위치"
+    },
+    {
+      "id": "DD-017",
+      "title": "타이포그래피",
+      "value": "Pretendard Variable / system-ui",
+      "rationale": "한글 우선. serif fallback 금지(DP-K001)",
+      "provenance": "user-fact"
+    },
+    {
+      "id": "DD-021",
+      "title": "그림자 스케일",
+      "value": "2단계",
+      "rationale": "elevation 구분은 2단계면 충분",
+      "provenance": "assumption"
+    }
+  ],
+
+  "tokens": {
+    "$comment": "각 카테고리는 배열 축약형 또는 {decision, allowed} 완전형. decision을 적으면 위반 리포트에 결정 ID가 함께 표시된다. 표기(#FFF vs rgb(255,255,255), 0.5rem vs 8px)는 자동 정규화되므로 편한 대로 적어도 된다. 카테고리를 생략하면 그 카테고리는 검사하지 않는다.",
+
+    "color": {
+      "decision": "DD-009",
+      "allowed": [
+        "#0F172A",
+        "#FFFFFF",
+        "#3B82F6",
+        "rgba(0,0,0,0)"
+      ]
+    },
+
+    "spacing": {
+      "decision": "DD-011",
+      "allowed": ["0px", "4px", "8px", "12px", "16px", "24px", "32px", "48px"]
+    },
+
+    "borderRadius": {
+      "decision": "DD-014",
+      "allowed": ["0px", "8px", "12px", "9999px"]
+    },
+
+    "fontFamily": {
+      "decision": "DD-017",
+      "allowed": ["Pretendard Variable", "system-ui"]
+    },
+
+    "shadow": {
+      "decision": "DD-021",
+      "allowed": [
+        "none",
+        "rgba(0, 0, 0, 0.06) 0px 1px 2px 0px",
+        "rgba(0, 0, 0, 0.08) 0px 4px 12px 0px"
+      ]
+    }
+  }
+}

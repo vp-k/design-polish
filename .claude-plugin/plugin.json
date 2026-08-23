@@ -1,7 +1,7 @@
 {
   "name": "design-polish",
-  "version": "2.4.0",
-  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification (renewal auto-captures pre-apply baseline), route auto-discovery.",
+  "version": "2.5.0",
+  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification (renewal auto-captures pre-apply baseline), route auto-discovery. v2.5.0: design contract (DESIGN.md + design-decisions.json) with ratcheted token-drift lint, Korean typography rules, component state contract, numbered rule IDs.",
   "author": {
     "name": "user01"
   },

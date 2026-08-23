@@ -2,7 +2,7 @@
 name: design-polish
 description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 66개 스타일/96개 색상/57개 타이포 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.4.0"
+version: "2.5.0"
 ---
 
 # 디자인 폴리싱 스킬 v2.0
@@ -44,6 +44,8 @@ version: "2.4.0"
     ↓
 0.5단계: Console Error 캡처 + Responsive Viewport [Bash]
     ↓
+0.7단계: 디자인 계약 확인 (DESIGN.md / design-decisions.json) [Read, Bash]
+    ↓  (계약 있으면 styleFit이 계약 준수 채점으로 전환 + 토큰 드리프트 린트 활성)
 1단계: WCAG 접근성 체크 (axe-core) [Bash, Read]
     ↓
 1.5단계: 디자인 지식 로딩 [Read, Bash]
@@ -225,6 +227,57 @@ Read(".design-polish/screenshots/current-main.png")
 
 ---
 
+## 0.7단계: 디자인 계약 확인
+
+**사용 도구**: `Read`, `Bash`
+
+디자인 계약은 **"이 값을 왜 썼는지"에 답할 수 있게 만드는 장치**다.
+계약이 있으면 styleFit 채점이 "값이 몇 종이냐"(휴리스틱)에서 **"결정에 없는 값을 썼느냐"** 로 바뀌고,
+`DP-T00x` 토큰 드리프트 린트가 활성화된다.
+
+```bash
+ls .design-polish/design-decisions.json 2>/dev/null && echo "CONTRACT_FOUND" || echo "NO_CONTRACT"
+ls .design-polish/DESIGN.md docs/DESIGN.md 2>/dev/null
+```
+
+### 계약이 있으면
+
+```
+# 성격 문서는 auto-complete-loop로 기획한 프로젝트라면 docs/DESIGN.md에 이미 있다.
+# 있으면 그것을 읽는다 — 같은 계약을 두 벌 만들지 않는다.
+Read("docs/DESIGN.md")  또는  Read(".design-polish/DESIGN.md")
+Read(".design-polish/design-decisions.json")   # 기계 검사용 토큰 집합 (경로 고정)
+```
+
+- **모든 개선안은 이 결정들과 정합해야 한다.** 계약을 어기는 제안(예: 계약 밖 색을 새로 도입)은
+  개선안이 아니라 **계약 변경 요청**이다. 그럴 땐 DESIGN.md의 어떤 결정을 왜 바꿔야 하는지 먼저 적고 사용자에게 확인한다.
+- 계약을 읽지 않고 값 제안을 하지 않는다 — "일관되게 틀린" 디자인의 시작점이다.
+
+### 계약이 없으면
+
+계약 없이도 전체 플로우는 동작한다(휴리스틱 styleFit + DP-K/DP-S 린트는 항상 활성).
+다만 **6단계 결과 출력에 계약 부재를 명시**하고, 다음을 안내한다:
+
+```bash
+mkdir -p .design-polish
+# 성격 문서가 이미 있으면(ACL 기획 산출물) 복사하지 않는다 — 계약이 두 벌이 되면 반드시 갈라진다.
+[[ -f docs/DESIGN.md || -f .design-polish/DESIGN.md ]] || cp "${CLAUDE_PLUGIN_ROOT}/templates/DESIGN.md" .design-polish/DESIGN.md
+cp "${CLAUDE_PLUGIN_ROOT}/templates/design-decisions.json" .design-polish/design-decisions.json
+```
+
+> 템플릿을 **복사만 하고 채우지 않은 채로 두지 않는다.** 예시값이 그대로 남은 계약은
+> 전 화면을 예시값에 맞추라고 지시하는 것과 같다. 채울 수 없으면 계약을 만들지 않는 편이 낫다.
+> (`/design-renewal`은 5단계에서 계약을 **자동 생성**한다 — 리뉴얼을 할 거라면 그쪽이 정석 경로.)
+
+### 래칫(ratchet) 동작
+
+계약 도입 첫 실행에서 현재 위반값 전체가 `.design-polish/token-baseline.json`에 동결된다.
+이후 실행은 **baseline 이후 새로 생긴 위반만** CRITICAL로 승격한다.
+브라운필드에 계약을 붙이자마자 점수가 0이 되는 교착을 막기 위한 장치이며,
+전면 리뉴얼 직후에는 이 파일을 삭제해 기준선을 다시 잡는다.
+
+---
+
 ## 1단계: WCAG 접근성 체크
 
 **사용 도구**: `Bash`, `Read`
@@ -277,7 +330,12 @@ Read(".design-polish/accessibility/wcag-report.json")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/industry-rules.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/component-checklist.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/ux-rules.md")
+Read("${CLAUDE_PLUGIN_ROOT}/knowledge/failure-rules.md")
 ```
+
+> `failure-rules.md`는 **규칙 ID 레지스트리**다. 리포트에서 문제를 지적할 때는
+> 반드시 ID를 인용한다 — `DP-U609 위반: focus ring 제거됨 (Button.tsx:24)`.
+> ID 없는 서술형 지적("여백이 답답하다")은 다음 회차에 같은 항목인지 대조할 수 없으므로 리포트에 넣지 않는다.
 
 ### 스크립트 검색 (감지된 서비스 유형/키워드 기반)
 
@@ -327,10 +385,23 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 | WCAG Critical | 30% | critical 위반 1건당 -10 |
 | WCAG Serious | 20% | serious 위반 1건당 -5 |
 | Console Errors | 20% | JS 에러 1건당 -5 |
-| **Style Fit** | 15% | **렌더 DOM 일관성 실측** — distinct 값 난립(폰트/라운딩/색상/여백/그림자) 감점. 표본<10이면 미측정(7점) |
+| **Style Fit** | 15% | **렌더 DOM 일관성 실측** — 아래 두 모드 중 하나. 표본<10이면 미측정(7점) |
 | **Performance** | 15% | **navigation/paint/resource timing 실측** — FCP·요청수·전송량 감점. FCP 측정 실패 시 감점 |
 
-> styleFit 임계값(폰트 ≤3종, border-radius ≤5종, 색상 ≤24종, spacing ≤12종, shadow ≤6종)은 휴리스틱이며 `scripts/capture.cjs`의 `scoreConsistency`에서 조정 가능합니다.
+**styleFit 두 모드 (v2.5.0)** — `health-score.json`의 `styleMode`로 구분됩니다.
+
+| 모드 | 조건 | 채점 |
+|------|------|------|
+| `heuristic` | 계약 없음 | distinct 값 난립 감점 (폰트 ≤3종, radius ≤5종, 색상 ≤24종, spacing ≤12종, shadow ≤6종) |
+| `contract` | `design-decisions.json` 존재 | **계약 위반만** 감점 — 신규 위반 -2/건, baseline 잔여 -0.1/건 |
+
+> 계약 모드에서는 값이 몇 종이든 상관없다. 계약이 20종을 허용했다면 20종이 정답이다.
+> 임계값은 `scripts/capture.cjs`의 `scoreConsistency`, 계약 린트는 `scripts/design-contract.cjs`에 있다.
+
+**모드가 다르면 회귀 비교를 하지 않는다.** 이력(`health-history.jsonl`)의 각 라인에 `styleMode`가 기록되고,
+baseline은 동일 `mode`+`route`+`styleMode` 라인에서만 선택된다. 계약을 처음 도입한 회차에
+"코드는 그대로인데 점수가 떨어졌다"는 거짓 회귀가 뜨지 않도록 하기 위한 것이며,
+따라서 **계약 도입 첫 회차는 `regression: null`이 정상**이다.
 
 ### 결과 확인
 
@@ -343,12 +414,23 @@ Read(".design-polish/health-score.json")
 {
   "score": 75,
   "breakdown": { "wcagCritical": 20, "wcagSerious": 15, "consoleErrors": 20, "styleFit": 11, "performance": 14 },
-  "styleScore": { "score": 11, "insufficient": false, "detail": { "fontFamily": { "count": 5, "healthy": 3, "penalty": 3 } } },
+  "styleMode": "contract",
+  "styleScore": { "score": 11, "mode": "contract", "hasBaseline": true, "totalViolations": 18, "newViolationCount": 2 },
   "perfMetrics": { "fcp": 1200, "requestCount": 34, "transferBytes": 812345 },
   "touchTargets": { "totalInteractive": 22, "undersized": 3 },
-  "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression" }
+  "tokenDrift": { "enabled": true, "totalViolations": 18, "newViolationCount": 2, "categories": { "color": { "rule": "DP-T002", "decision": "DD-009" } } },
+  "ruleFailures": [
+    { "id": "DP-T002", "severity": "CRITICAL", "title": "색상이 디자인 계약 팔레트 밖의 값", "count": 6, "newCount": 2,
+      "samples": [{ "value": "#3B82F6", "selector": "section.hero > button.cta" }] },
+    { "id": "DP-S002", "severity": "CRITICAL", "title": "인터랙티브 요소에 포커스 표시 없음 (WCAG 2.4.7)", "count": 3 },
+    { "id": "DP-K001", "severity": "HIGH", "title": "한글 텍스트에 serif fallback 폰트 스택", "count": 12 }
+  ],
+  "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression", "styleMode": "contract" }
 }
 ```
+
+**`ruleFailures[]`는 스크립트가 결정론적으로 판정한 결과다.** 심각도를 재해석하거나 임의로 누락하지 않고
+5·6단계 개선안에 **그대로** 옮긴다. 신규 토큰 위반(`newCount > 0`)은 CRITICAL로 승격되어 항상 최상단에 온다.
 
 **Regression 감지**: `health-history.jsonl`의 직전 회차 대비 하락 시 경고. 개선안 도출(5단계)에서 regression 원인 분석 우선 처리.
 
@@ -525,7 +607,8 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 | 우선순위 | 카테고리 | 영향 | 예시 |
 |---------|---------|------|------|
-| **P1** | 접근성 (WCAG 위반) | CRITICAL | 대비 부족, 터치 타겟 미달, 포커스 미표시 |
+| **P0** | **계약 위반 (신규)** | CRITICAL | `DP-T00x` newCount>0 — 결정에 없는 값이 새로 유입됨 |
+| **P1** | 접근성 (WCAG 위반) | CRITICAL | 대비 부족, 터치 타겟 미달, 포커스 미표시 (`DP-S002`) |
 | **P2** | 터치/인터랙션 | CRITICAL | cursor 미지정, 타겟 크기 미달, hover 없음 |
 | **P3** | 성능 | HIGH | 이미지 미최적화, reduced-motion 미지원 |
 | **P4** | 레이아웃/반응형 | HIGH | CLS, 모바일 깨짐, 뷰포트 이슈 |
@@ -535,9 +618,18 @@ Read(".design-polish/screenshots/reference-hero.png")
 | **P8** | 차트/데이터 | LOW | 차트 접근성, 데이터 시각화 개선 |
 
 각 개선안에는 다음 정보를 포함합니다:
-- 대상 파일 경로
+- **규칙 ID** (`DP-T/K/S/U/C` 또는 axe rule id) — 필수. ID 없는 서술형 지적은 넣지 않는다
+- 대상 파일 경로 또는 CSS 선택자
 - 구체적인 변경 내용
-- 참조 근거 (knowledge 파일, search.cjs 결과, WCAG 기준 등)
+- 참조 근거 (계약의 결정 ID `DD-NNN`, knowledge 파일, search.cjs 결과, WCAG 기준 등)
+
+**자동 판정 규칙(`ruleFailures[]`)과 모델 판단 규칙을 섞지 않는다.**
+자동 규칙은 `health-score.json`에서 그대로 옮기고, 모델 판단으로 추가하는 항목은
+`ux-rules.md`/`component-checklist.md`의 행 ID를 인용한다.
+
+**계약이 있는데 계약 밖 값을 제안하려는 경우**, 그것은 개선안이 아니라 계약 변경이다.
+개선안 목록에 넣지 말고 별도 "계약 변경 제안" 항목으로 분리해
+어떤 `DD-NNN`을 왜 바꿔야 하는지 적고 사용자 확인을 받는다.
 
 ---
 
@@ -600,31 +692,47 @@ Read(".design-polish/screenshots/reference-hero.png")
 - **추천 색상**: Primary [HEX], Secondary [HEX], CTA [HEX], BG [HEX]
 - **추천 폰트**: [Heading Font] + [Body Font] — [Google Fonts URL]
 
-## 개선안 (8단계 우선순위)
+## 디자인 계약
+- **상태**: 있음 (.design-polish/design-decisions.json, 결정 12건) | 없음 (휴리스틱 채점)
+- **styleMode**: contract | heuristic
+- **토큰 드리프트**: 총 18건 위반 / 신규 2건 (baseline 동결: 2026-08-20)
+
+## 규칙 위반 (자동 판정 — health-score.json ruleFailures)
+| 심각도 | 규칙 | 내용 | 건수 | 위치 예시 |
+|--------|------|------|------|-----------|
+| CRITICAL | DP-T002 (DD-009) | 계약 팔레트 밖 색상 | 6 (신규 2) | `section.hero > button.cta` — #3B82F6 |
+| CRITICAL | DP-S002 | 포커스 표시 없음 | 3 | `div[role=button].menu` |
+| HIGH | DP-K001 | 한글 serif fallback | 12 | `article > p` — Inter, serif |
+
+## 개선안 (우선순위)
+
+### P0: 계약 위반 — 신규 (CRITICAL)
+- [ ] DP-T002 / DD-009 — `#3B82F6`를 계약 팔레트 값으로 교체 (src/components/CTA.tsx:41)
 
 ### P1: 접근성 (CRITICAL)
-- [ ] btn-primary 색상 대비 수정 (src/components/Button.tsx)
+- [ ] DP-S002 — btn-primary focus ring 복구 (src/components/Button.tsx)
+- [ ] color-contrast — btn-primary 대비 4.5:1 확보 (src/components/Button.tsx)
 
 ### P2: 터치/인터랙션 (CRITICAL)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 
 ### P3: 성능 (HIGH)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 
 ### P4: 레이아웃/반응형 (HIGH)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 
 ### P5: 타이포/색상 (MEDIUM)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 
 ### P6: 애니메이션 (MEDIUM)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 
 ### P7: 스타일 적합성 (MEDIUM)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 
 ### P8: 차트/데이터 (LOW)
-- [ ] [개선안 + 대상 파일]
+- [ ] [규칙 ID] [개선안 + 대상 파일]
 ```
 
 ---

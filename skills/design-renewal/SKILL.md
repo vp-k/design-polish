@@ -2,7 +2,7 @@
 name: design-renewal
 description: 디자인 전면 리뉴얼. 디자인 시스템 교체 수준의 대규모 변경. 색상 팔레트/타이포그래피/컴포넌트/레이아웃 전면 교체. 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "1.3.0"
+version: "1.4.0"
 ---
 
 # 디자인 리뉴얼 스킬 v1.0
@@ -56,6 +56,8 @@ design-polish와 동일한 0~6단계 분석 인프라를 사용하되, 7단계 �
 4단계: Gap 분석 (시각 비교 + 지식 기반) [Read]
     |
 5단계: 리뉴얼 방향 수립 + 개선안 도출
+    |
+5-7단계: 디자인 계약 영속화 (DESIGN.md + design-decisions.json) [Write]  ★필수
     |
 6단계: 리뉴얼 계획 출력 + 사용자 확인
     |
@@ -151,6 +153,47 @@ spacing:        xs: Xpx, sm: Xpx, md: Xpx, lg: Xpx, xl: Xpx, 2xl: Xpx
 transition:     fast: Xms, normal: Xms, slow: Xms
 ```
 
+### 5-7. 디자인 계약 영속화 (필수)
+
+**여기까지 수립한 디자인 시스템을 파일로 남기지 않으면, 다음 실행은 이 결정들을 전부 다시 추론한다.**
+매 회차가 조금씩 다른 값을 뽑아내는 것 — 이 플러그인 스스로가 드리프트의 원인이 된다.
+5단계에서 정한 값은 **반드시** 다음 두 파일로 기록한다. (사용자 확인은 6단계에서 받되, 계약 초안 작성은 여기서 한다.)
+
+```
+Write(".design-polish/DESIGN.md")            # 왜 이 결정인가 (제품 성격·원칙·결정 목록)
+Write(".design-polish/design-decisions.json") # 무엇이 허용되는가 (기계 판정용 토큰 집합)
+```
+
+> **`docs/DESIGN.md`가 이미 있으면**(auto-complete-loop로 기획한 프로젝트) 새 파일을 만들지 말고
+> **그 문서를 갱신한다.** 성격 계약이 두 벌이 되면 반드시 갈라지고, 어느 쪽이 진짜인지 아무도 모르게 된다.
+> `design-decisions.json`은 기계 판정용이라 경로가 `.design-polish/`로 고정이며, 그쪽 결정 ID는
+> `docs/DESIGN.md`의 결정 표와 1:1로 맞춘다.
+
+템플릿을 뼈대로 쓴다:
+
+```bash
+ls "${CLAUDE_PLUGIN_ROOT}/templates/DESIGN.md" "${CLAUDE_PLUGIN_ROOT}/templates/design-decisions.json"
+```
+
+**작성 규칙:**
+
+1. **결정 ID를 부여한다.** 5단계 표의 각 항목 → `DD-NNN`. 팔레트·타이포·토큰의 모든 값은
+   자기를 낳은 결정 ID를 갖는다. ID 없는 값은 계약에 넣지 않는다.
+2. **근거를 적는다.** "Glassmorphism이라서 radius 16px"이 아니라, 그 스타일을 왜 골랐는지(원칙)와
+   그 원칙이 왜 이 radius를 요구하는지를 적는다. **DESIGN.md가 틀리면 결과물은 "일관되게 틀린" 디자인이 된다.**
+3. **출처 마커를 붙인다.** `user-fact` / `repo-fact:<path>` / `assumption: <근거>` / `blocker`.
+   제품 성격(1절)은 `assumption` 금지 — 추측한 성격은 전 화면에 전파되어 되돌리기가 가장 비싸다.
+   모르면 6단계 사용자 확인에서 묻는다.
+4. **두 파일을 동기화한다.** `design-decisions.json`의 `tokens[*].decision`은 DESIGN.md에 실재하는 ID여야 한다.
+5. **anti-goals를 적는다.** 무엇을 하지 않기로 했는지가 없으면 계약이 아니다.
+
+`design-decisions.json`의 `tokens`에 넣은 값만 UI에 등장할 수 있고, 그 밖의 값은
+다음 회차부터 `DP-T00x` 위반으로 잡힌다. 그러니 **실제로 적용할 값만** 넣는다
+(예시 팔레트를 그대로 남겨두면 전 화면을 예시값에 맞추라는 지시가 된다).
+
+> 계약 파일은 표기를 자동 정규화한다 — `#FFF`/`rgb(255,255,255)`, `0.5rem`/`8px`은 같은 값으로 본다.
+> 편한 표기로 적어도 거짓 위반이 생기지 않는다.
+
 ---
 
 ## 6단계: 리뉴얼 계획 출력 + 사용자 확인
@@ -195,8 +238,20 @@ transition:     fast: Xms, normal: Xms, slow: Xms
 ### WCAG 접근성
 - 새 팔레트의 대비율 검증 결과
 
+### 디자인 계약 (5-7단계 산출)
+- `.design-polish/DESIGN.md` — 결정 N건 (DD-001 ~ DD-0NN)
+- `.design-polish/design-decisions.json` — 토큰 5범주 동결
+- **확인이 필요한 항목** (출처 `blocker` / `assumption`으로 표시된 것):
+  | ID | 결정 | 현재 출처 | 확인 요청 |
+  |----|------|----------|-----------|
+  | DD-001 | 제품 성격 | `blocker` | "이 제품이 주어야 할 인상은 무엇인가요?" |
+
 > 위 계획대로 진행할까요? (Y/n)
 ```
+
+**제품 성격(DESIGN.md 1절)에 `blocker`가 남아 있으면 여기서 반드시 묻는다.**
+추측한 성격으로 전면 적용하면 "일관되게 틀린" 디자인이 전 화면에 퍼지고, 되돌리는 비용이 가장 크다.
+사용자 답변을 받아 DESIGN.md를 갱신한 뒤 7단계로 진행한다.
 
 **--analyze 옵션 시**: 여기서 종료. 코드 적용하지 않음.
 
@@ -233,6 +288,13 @@ node scripts/capture.cjs   # design-polish 1.8단계와 동일 호출 (BASE_URL 
 - **동일 cwd 원칙**: 이력 파일은 `<cwd>/.design-polish/health-history.jsonl`에 저장되고 `readPreviousScore`도 현재 cwd에서 읽는다. baseline 캡처와 8단계 재캡처를 **같은 작업 디렉토리에서** 실행해야 baseline이 조회된다(다른 폴더에서 돌리면 regression=null).
 - baseline 캡처가 실패(서버 미기동 등)하면 **적용을 진행하되**, close-the-loop는 "비교 불가"로 보고하고 롤백 판단을 전적으로 백업 지점에 의존한다는 사실을 사용자에게 고지한다.
 - 캡처 산출물(`.design-polish/health-history.jsonl`)이 baseline으로 append되었는지 확인 후 백업 단계로 진행한다.
+- **동일 styleMode 원칙 (v2.5.0)**: 이력 baseline은 `mode`+`route`에 더해 `styleMode`(contract/heuristic)까지
+  일치해야 선택된다. 5-7단계에서 계약을 **먼저 기록**했으므로 이 baseline 캡처는 이미 `contract` 모드로 돌고,
+  적용 후 재캡처도 같은 모드가 된다. **5-7단계를 건너뛰고 계약을 7단계 중간에 만들면** before(heuristic)와
+  after(contract)의 산식이 달라져 `regression=null`이 되고 close-the-loop가 무력화된다 — 순서를 바꾸지 말 것.
+- **`token-baseline.json`은 이 시점에 자동 생성된다.** 리뉴얼 前 위반값이 동결되므로, 적용 후 재캡처에서
+  **리뉴얼이 새로 만들어낸 계약 밖 값만** 신규 위반(CRITICAL)으로 드러난다. 이것이 리뉴얼 품질의 핵심 신호이므로
+  **검증 루프가 끝나기 전에는 이 파일을 삭제하지 않는다.**
 
 ### 적용 전 백업 (baseline 캡처 직후)
 
@@ -281,7 +343,22 @@ fi
 
 ### 적용 후 검증 루프 (close-the-loop)
 
-design-polish SKILL의 **8단계(close-the-loop)** 를 그대로 따릅니다: 전면 적용 후 캡처를 **"적용 전 baseline 캡처"와 동일한 플래그로** 재실행하여 `health-score.json`의 regression을 확인하고, `regression`이 하락(diff < 0)이면 백업 지점으로 롤백을 검토합니다. `regression`이 `null`이면 baseline 캡처가 누락됐거나 mode/route가 어긋난 것이므로 점수 판정 대신 백업 기반 수동 검토로 전환합니다. before/after 점수를 반드시 함께 보고합니다.
+design-polish SKILL의 **8단계(close-the-loop)** 를 그대로 따릅니다: 전면 적용 후 캡처를 **"적용 전 baseline 캡처"와 동일한 플래그로** 재실행하여 `health-score.json`의 regression을 확인하고, `regression`이 하락(diff < 0)이면 백업 지점으로 롤백을 검토합니다. `regression`이 `null`이면 baseline 캡처가 누락됐거나 mode/route/styleMode가 어긋난 것이므로 점수 판정 대신 백업 기반 수동 검토로 전환합니다. before/after 점수를 반드시 함께 보고합니다.
+
+**계약 준수 검증 (v2.5.0)** — 점수와 별개로 재캡처 결과의 `tokenDrift.newViolationCount`를 확인합니다.
+
+| newViolationCount | 의미 | 조치 |
+|-------------------|------|------|
+| 0 | 리뉴얼이 계약대로 적용됨 | 통과 |
+| > 0 | **방금 만든 계약을 방금 한 적용이 어김** | 해당 값을 계약 토큰으로 교체. 계약이 틀렸다면 DESIGN.md를 고치고 사용자 확인 |
+
+점수가 올라도 신규 위반이 있으면 완료로 보고하지 않습니다 — 다음 회차의 드리프트를 심어놓은 것이기 때문입니다.
+`ruleFailures[]`의 CRITICAL/HIGH 항목을 규칙 ID와 함께 그대로 보고합니다.
+
+**재기준선(re-baseline)**: 검증 루프를 통과하고 사용자가 결과를 수용한 뒤에만
+`.design-polish/token-baseline.json`을 삭제해 다음 회차 기준선을 새로 잡습니다.
+남아 있는 위반이 있다면 **몇 건을 부채로 동결하는지 사용자에게 알리고** 삭제합니다
+(조용히 지우면 미해결 위반이 통과로 세탁됩니다).
 
 ### 적용 범위 (design-polish와의 차이)
 

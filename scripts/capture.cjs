@@ -7,6 +7,9 @@
 //   - Style consistency (rendered-DOM computed-style distribution → styleFit score)
 //   - Performance (Navigation/Paint/Resource timing → performance score)
 //   - Touch-target audit (mobile viewport, interactive elements < 44x44)
+//   - Token drift vs design contract (.design-polish/design-decisions.json, ratcheted)
+//   - Korean typography rules (serif fallback / keep-all / tracking)
+//   - Component state contract (disabled / focus visibility / pointer)
 //   - Design Health Score (0-100) with regression + append-only history
 //
 // 스코어 산출은 브라우저 계측(collect*)과 순수 함수(score*)로 분리되어 있어,
@@ -14,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const contractLib = require('./design-contract.cjs');
 
 // ============================================
 // 유틸리티
@@ -61,14 +65,52 @@ const CONFIG = {
 // ============================================
 
 // 일관성 스코어 (styleFit, 0-15).
-// 잘 설계된 디자인 시스템은 distinct 값이 제한적이다. 값이 난립할수록 감점.
+//
+// 두 가지 모드로 동작한다:
+//   - contract: `.design-polish/design-decisions.json`이 있으면 **허용 토큰 집합 밖의 값**을
+//     감점한다. "근거 없는 값"이 취향 차이가 아니라 계약 위반으로 판정된다.
+//     브라운필드 데드락을 막기 위해 ratchet 적용 — 계약 도입 시점의 기존 위반(baseline)은
+//     소폭 감점, 그 이후 새로 생긴 값(newViolations)만 강하게 감점한다.
+//   - heuristic: 계약이 없으면 distinct 값 난립 개수로 감점(기존 동작, 하위호환).
+//
 // 임계값은 휴리스틱이며 조정 가능 (tunable). sampled 부족 시 만점 방지.
-function scoreConsistency(m) {
+function scoreConsistency(m, drift) {
   const detail = {};
   if (!m || !m.sampled || m.sampled < 10) {
     // 측정 표본 부족 — 빈/오류 페이지가 '일관적'으로 만점을 얻는 것을 방지.
-    return { score: 7, insufficient: true, sampled: (m && m.sampled) || 0, detail };
+    return { score: 7, insufficient: true, sampled: (m && m.sampled) || 0, mode: 'insufficient', detail };
   }
+
+  // ── contract 모드 ──
+  if (drift && drift.enabled) {
+    let cPenalty = 0;
+    for (const [cat, r] of Object.entries(drift.categories || {})) {
+      // 신규 위반은 건당 -2, baseline 잔존 위반은 건당 -0.1 (전면 리팩터 강요 방지)
+      const baselineCount = Math.max(0, (r.violationCount || 0) - (r.newViolationCount || 0));
+      const p = (r.newViolationCount || 0) * 2 + baselineCount * 0.1;
+      detail[cat] = {
+        rule: r.rule,
+        decision: r.decision,
+        violations: r.violationCount || 0,
+        newViolations: r.newViolationCount || 0,
+        penalty: Math.round(p * 100) / 100,
+      };
+      cPenalty += p;
+    }
+    const cScore = Math.max(0, Math.min(15, 15 - cPenalty));
+    return {
+      score: Math.round(cScore * 100) / 100,
+      insufficient: false,
+      sampled: m.sampled,
+      mode: 'contract',
+      hasBaseline: !!drift.hasBaseline,
+      totalViolations: drift.totalViolations || 0,
+      newViolationCount: drift.newViolationCount || 0,
+      detail,
+    };
+  }
+
+  // ── heuristic 모드 (계약 없음) ──
   let penalty = 0;
   const add = (name, count, healthy, weight) => {
     const over = Math.max(0, count - healthy);
@@ -82,7 +124,7 @@ function scoreConsistency(m) {
   add('spacing', m.spacingCount || 0, 12, 0.3);
   add('shadow', m.shadowCount || 0, 6, 0.5);
   const score = Math.max(0, Math.min(15, 15 - penalty));
-  return { score: Math.round(score * 100) / 100, insufficient: false, sampled: m.sampled, detail };
+  return { score: Math.round(score * 100) / 100, insufficient: false, sampled: m.sampled, mode: 'heuristic', detail };
 }
 
 // 성능 스코어 (0-15). Puppeteer navigation/paint/resource timing 기반.
@@ -279,8 +321,39 @@ function saveAccessibilityReport(report, filename = 'wcag-report.json') {
 async function collectStyleMetrics(page) {
   try {
     return await page.evaluate(() => {
+      // 값 → { count, sample } 누적. 계약 위반을 코드에서 찾을 수 있도록 셀렉터 표본을 함께 남긴다.
+      const cssPath = (el) => {
+        if (!el || !el.tagName) return '';
+        const parts = [];
+        let node = el;
+        let depth = 0;
+        while (node && node.nodeType === 1 && depth < 4) {
+          let seg = node.tagName.toLowerCase();
+          if (node.id) { parts.unshift(`${seg}#${node.id}`); break; }
+          const cls = (typeof node.className === 'string' ? node.className : '')
+            .trim().split(/\s+/).filter(Boolean).slice(0, 2);
+          if (cls.length) seg += '.' + cls.join('.');
+          parts.unshift(seg);
+          node = node.parentElement;
+          depth++;
+        }
+        return parts.join(' > ').slice(0, 120);
+      };
+
+      const buckets = {
+        borderRadius: new Map(), fontFamily: new Map(), color: new Map(),
+        spacing: new Map(), shadow: new Map(),
+      };
+      const capped = {};
+      const bump = (cat, value, el) => {
+        const m = buckets[cat];
+        const cur = m.get(value);
+        if (cur) { cur.count++; return; }
+        if (m.size >= 200) { capped[cat] = true; return; } // 폭주 방지 캡 (도달 사실을 린트에 전달)
+        m.set(value, { count: 1, sample: cssPath(el) });
+      };
+
       const els = Array.from(document.querySelectorAll('body *'));
-      const rad = new Set(), fonts = new Set(), colors = new Set(), space = new Set(), shadow = new Set();
       let sampled = 0;
       for (const el of els) {
         const r = el.getBoundingClientRect();
@@ -288,24 +361,34 @@ async function collectStyleMetrics(page) {
         const cs = getComputedStyle(el);
         sampled++;
         const br = cs.borderTopLeftRadius;
-        if (br && br !== '0px') rad.add(br);
-        if (cs.fontFamily) fonts.add(cs.fontFamily.split(',')[0].trim().toLowerCase().replace(/["']/g, ''));
-        if (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') colors.add(cs.color);
-        if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)') colors.add(cs.backgroundColor);
+        if (br && br !== '0px') bump('borderRadius', br, el);
+        if (cs.fontFamily) bump('fontFamily', cs.fontFamily.split(',')[0].trim().toLowerCase().replace(/["']/g, ''), el);
+        if (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') bump('color', cs.color, el);
+        if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)') bump('color', cs.backgroundColor, el);
         for (const p of [cs.paddingTop, cs.paddingLeft, cs.marginTop, cs.marginLeft, cs.rowGap, cs.columnGap]) {
-          if (p && p !== '0px' && p !== 'normal') space.add(p);
+          if (p && p !== '0px' && p !== 'normal') bump('spacing', p, el);
         }
-        if (cs.boxShadow && cs.boxShadow !== 'none') shadow.add(cs.boxShadow);
+        if (cs.boxShadow && cs.boxShadow !== 'none') bump('shadow', cs.boxShadow, el);
       }
+
+      const values = {};
+      for (const [cat, m] of Object.entries(buckets)) {
+        values[cat] = Array.from(m.entries())
+          .map(([value, v]) => ({ value, count: v.count, sample: v.sample }))
+          .sort((a, b) => b.count - a.count);
+      }
+
       return {
         sampled,
-        borderRadiusCount: rad.size,
-        fontFamilyCount: fonts.size,
-        colorCount: colors.size,
-        spacingCount: space.size,
-        shadowCount: shadow.size,
-        fontFamilies: Array.from(fonts).slice(0, 20),
-        borderRadiusValues: Array.from(rad).slice(0, 20),
+        borderRadiusCount: buckets.borderRadius.size,
+        fontFamilyCount: buckets.fontFamily.size,
+        colorCount: buckets.color.size,
+        spacingCount: buckets.spacing.size,
+        shadowCount: buckets.shadow.size,
+        fontFamilies: values.fontFamily.slice(0, 20).map(v => v.value),
+        borderRadiusValues: values.borderRadius.slice(0, 20).map(v => v.value),
+        values,
+        capped,
       };
     });
   } catch (error) {
@@ -363,6 +446,163 @@ async function collectTouchTargets(page) {
     });
   } catch (error) {
     console.error(`Touch target audit failed: ${error.message}`);
+    return null;
+  }
+}
+
+// 한글 텍스트를 직접 담은 요소의 타이포 원자료 수집.
+// 판정(serif fallback / keep-all / 자간)은 design-contract.cjs의 순수 함수가 담당한다.
+async function collectKoreanTypography(page) {
+  try {
+    return await page.evaluate(() => {
+      const cssPath = (el) => {
+        if (!el || !el.tagName) return '';
+        const parts = [];
+        let node = el, depth = 0;
+        while (node && node.nodeType === 1 && depth < 4) {
+          let seg = node.tagName.toLowerCase();
+          if (node.id) { parts.unshift(`${seg}#${node.id}`); break; }
+          const cls = (typeof node.className === 'string' ? node.className : '')
+            .trim().split(/\s+/).filter(Boolean).slice(0, 2);
+          if (cls.length) seg += '.' + cls.join('.');
+          parts.unshift(seg);
+          node = node.parentElement;
+          depth++;
+        }
+        return parts.join(' > ').slice(0, 120);
+      };
+      const HANGUL = /[가-힣]/;
+      const px = (v) => {
+        const n = parseFloat(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      const els = Array.from(document.querySelectorAll('body *'));
+      const samples = [];
+      let scanned = 0;
+
+      for (const el of els) {
+        if (samples.length >= 120) break;
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+
+        // 자식 요소가 아닌 '직접 텍스트 노드'의 한글만 계상 (부모로 중복 집계 방지)
+        let text = '';
+        for (const n of el.childNodes) {
+          if (n.nodeType === 3) text += n.nodeValue;
+        }
+        text = text.trim();
+        if (!text || !HANGUL.test(text)) continue;
+        scanned++;
+
+        const cs = getComputedStyle(el);
+        const hangulChars = (text.match(/[가-힣]/g) || []).length;
+        const display = cs.display;
+        samples.push({
+          selector: cssPath(el),
+          fontFamily: cs.fontFamily || '',
+          chars: hangulChars,
+          wordBreak: cs.wordBreak || 'normal',
+          overflowWrap: cs.overflowWrap || cs.wordWrap || 'normal',
+          letterSpacing: cs.letterSpacing === 'normal' ? 0 : px(cs.letterSpacing),
+          fontSize: px(cs.fontSize),
+          block: display === 'block' || display === 'flex' || display === 'grid' || display === 'list-item',
+        });
+      }
+
+      return { scanned, samples };
+    });
+  } catch (error) {
+    console.error(`Korean typography audit failed: ${error.message}`);
+    return null;
+  }
+}
+
+// 컴포넌트 상태 계약 원자료 수집 (disabled 표현 / 포커스 가시성 / 클릭 어포던스).
+// 포커스 가시성은 실제로 focus()를 걸어 전/후 computed style을 비교한다 — 정적 분석으로는
+// :focus-visible 규칙 적용 여부를 알 수 없기 때문. 측정 후 blur로 원복한다.
+async function collectStateContract(page) {
+  try {
+    return await page.evaluate(() => {
+      const cssPath = (el) => {
+        if (!el || !el.tagName) return '';
+        const parts = [];
+        let node = el, depth = 0;
+        while (node && node.nodeType === 1 && depth < 4) {
+          let seg = node.tagName.toLowerCase();
+          if (node.id) { parts.unshift(`${seg}#${node.id}`); break; }
+          const cls = (typeof node.className === 'string' ? node.className : '')
+            .trim().split(/\s+/).filter(Boolean).slice(0, 2);
+          if (cls.length) seg += '.' + cls.join('.');
+          parts.unshift(seg);
+          node = node.parentElement;
+          depth++;
+        }
+        return parts.join(' > ').slice(0, 120);
+      };
+
+      const INTERACTIVE = 'a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [tabindex]:not([tabindex="-1"])';
+      const all = Array.from(document.querySelectorAll(INTERACTIVE))
+        .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+
+      const disabled = [];
+      const focusable = [];
+      const clickable = [];
+
+      const focusSignature = (cs) => [
+        cs.outlineStyle, cs.outlineWidth, cs.outlineColor, cs.outlineOffset,
+        cs.boxShadow, cs.borderColor, cs.borderWidth, cs.backgroundColor,
+      ].join('|');
+
+      const prevActive = document.activeElement;
+      let focusMeasured = 0;
+
+      for (const el of all) {
+        const cs = getComputedStyle(el);
+        const isDisabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
+
+        if (isDisabled) {
+          if (disabled.length < 30) {
+            disabled.push({ selector: cssPath(el), cursor: cs.cursor, opacity: cs.opacity });
+          }
+          continue; // disabled 요소는 포커스/커서 검사 대상에서 제외
+        }
+
+        // 포커스 가시성 — 상위 30개만 (focus() 비용/부작용 최소화)
+        if (focusable.length < 30) {
+          let changed = null;
+          try {
+            const before = focusSignature(cs);
+            el.focus({ preventScroll: true });
+            if (document.activeElement === el) {
+              const after = focusSignature(getComputedStyle(el));
+              changed = before !== after;
+              focusMeasured++;
+            }
+          } catch (_) { changed = null; }
+          if (changed !== null) focusable.push({ selector: cssPath(el), focusChanged: changed });
+        }
+
+        // 클릭 어포던스 — 네이티브 링크/버튼은 UA 기본값이 있으므로 제외하고
+        // role/tabindex로 만든 커스텀 클릭 요소만 검사
+        const tag = el.tagName.toLowerCase();
+        const isNative = tag === 'a' || tag === 'button' || tag === 'select' || tag === 'input' || tag === 'textarea';
+        if (!isNative && clickable.length < 30) {
+          clickable.push({ selector: cssPath(el), tag, cursor: cs.cursor });
+        }
+      }
+
+      try {
+        if (document.activeElement && document.activeElement !== prevActive && document.activeElement.blur) {
+          document.activeElement.blur();
+        }
+        if (prevActive && prevActive.focus) prevActive.focus({ preventScroll: true });
+      } catch (_) { /* 원복 실패는 계측 결과에 영향 없음 */ }
+
+      return { scannedInteractive: all.length, focusMeasured, disabled, focusable, clickable };
+    });
+  } catch (error) {
+    console.error(`State contract audit failed: ${error.message}`);
     return null;
   }
 }
@@ -443,7 +683,11 @@ function saveConsoleErrors(consoleErrors, pageErrors) {
 // mode/route가 주어지면 동종 라인만 baseline으로 선택한다 — 측정 모드(full vs no-wcag)나
 // 라우트가 다르면 점수 상한이 달라 diff가 무의미하고, 크로스 모드 오판(거짓 improved/regression)을
 // 낸다. 뒤에서부터 순회하며 첫 유효·동종 라인을 채택(손상된 마지막 줄 내성).
-function readPreviousScore(mode, route) {
+// styleMode(contract/heuristic)도 동종 조건에 포함한다 — 디자인 계약을 도입하는 순간
+// styleFit 산식 자체가 바뀌므로, 계약 이전(heuristic) 점수와 비교하면 코드가 하나도
+// 안 바뀌었는데 거짓 regression/improved가 뜬다. 이력에 styleMode가 없는 구(舊) 라인은
+// 'heuristic'으로 간주(하위호환).
+function readPreviousScore(mode, route, styleMode) {
   const fp = path.join(process.cwd(), '.design-polish', 'health-history.jsonl');
   try {
     if (!fs.existsSync(fp)) return null;
@@ -454,6 +698,7 @@ function readPreviousScore(mode, route) {
       if (typeof entry.score !== 'number') continue;
       if (mode != null && entry.mode !== mode) continue;   // 동일 측정 모드만
       if (route != null && entry.route !== route) continue; // 동일 라우트만
+      if (styleMode != null && (entry.styleMode || 'heuristic') !== styleMode) continue; // 동일 스코어링 산식만
       return entry.score;
     }
     return null;
@@ -473,6 +718,7 @@ function appendHealthHistory(report) {
     breakdown: report.breakdown,
     mode: report.mode,
     route: report.route,
+    styleMode: report.styleMode || 'heuristic',
   }) + '\n';
   fs.appendFileSync(fp, line);
 }
@@ -498,9 +744,10 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
 
   const mode = meta.mode || 'full';
   const route = meta.route || '/';
+  const styleMode = meta.styleMode || 'heuristic';
 
-  // Regression baseline 비교 — 이력 파일에서 동일 mode+route 직전 회차 기준 (append 전에 읽음)
-  const previousScore = readPreviousScore(mode, route);
+  // Regression baseline 비교 — 이력에서 동일 mode+route+styleMode 직전 회차 기준 (append 전에 읽음)
+  const previousScore = readPreviousScore(mode, route, styleMode);
   let regression = null;
   if (previousScore != null) {
     const diff = healthScore.score - previousScore;
@@ -513,6 +760,7 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
       tolerance: REGRESSION_TOLERANCE,
       mode,
       route,
+      styleMode,
     };
   }
 
@@ -521,6 +769,7 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
     ...extras,
     mode,
     route,
+    styleMode,
     timestamp: new Date().toISOString(),
     regression,
   };
@@ -534,6 +783,30 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
     console.log(`  ${regression.status}: ${regression.previousScore} → ${regression.currentScore} (${regression.diff >= 0 ? '+' : ''}${regression.diff})`);
   }
   return report;
+}
+
+// 룰 위반 요약 출력 — 스킬(SKILL.md)이 이 목록을 그대로 우선순위 큐로 사용한다.
+// 심각도 순으로 이미 정렬된 summarizeRuleFailures 결과를 상위 12건만 보여준다.
+function printRuleFailures(ruleFailures, drift) {
+  if (drift && drift.enabled) {
+    console.log(`  Token drift: ${drift.totalViolations} violation(s), ${drift.newViolationCount} new (baseline ${drift.hasBaseline ? 'on' : 'off'})`);
+  } else {
+    console.log('  Token drift: skipped (no .design-polish/design-decisions.json)');
+  }
+  if (!ruleFailures || ruleFailures.length === 0) {
+    console.log('  Rule failures: none');
+    return;
+  }
+  console.log(`  Rule failures: ${ruleFailures.length}`);
+  for (const f of ruleFailures.slice(0, 12)) {
+    const newTag = f.newCount > 0 ? `, ${f.newCount} new` : '';
+    console.log(`    [${f.severity}] ${f.id} ${f.title} (x${f.count || 0}${newTag})`);
+    const s = (f.samples || [])[0];
+    if (s) console.log(`        e.g. ${s.selector || '?'}${s.detail ? ` — ${s.detail}` : ''}${s.value ? ` — ${s.value}` : ''}`);
+  }
+  if (ruleFailures.length > 12) {
+    console.log(`    ... +${ruleFailures.length - 12} more (see .design-polish/health-score.json)`);
+  }
 }
 
 // ============================================
@@ -581,6 +854,8 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
     let wcagReport = null;
     let styleMetrics = null;
     let perfMetrics = null;
+    let koreanMetrics = null;
+    let stateMetrics = null;
     const primaryRoute = routes[0];
 
     for (const vp of viewportsToUse) {
@@ -611,6 +886,7 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
           if (route === primaryRoute && vp.name === 'desktop') {
             styleMetrics = await collectStyleMetrics(page);
             perfMetrics = await collectPerfMetrics(page);
+            koreanMetrics = await collectKoreanTypography(page);
             if (options.wcag) {
               console.log('Running WCAG accessibility check (desktop)...');
               wcagReport = await runAccessibilityCheck(page, url);
@@ -620,6 +896,8 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
                 console.log(`  Passes: ${wcagReport.summary.passes}`);
               }
             }
+            // 상태 계약은 마지막에 — focus()가 DOM/앱 상태를 건드리므로 axe·스크린샷보다 뒤에 둔다.
+            stateMetrics = await collectStateContract(page);
           }
 
           results.push({ route, viewport: vp.name, filename, success: true });
@@ -666,8 +944,32 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
     // Console error 저장
     saveConsoleErrors(consoleErrors, pageErrors);
 
+    // ── 디자인 계약(.design-polish/design-decisions.json) 로드 + 룰 린트
+    // 계약이 없으면 drift.enabled=false → styleFit은 기존 heuristic 산식 그대로 (하위호환).
+    const contract = contractLib.readDesignContract(process.cwd());
+    let baseline = contractLib.readTokenBaseline(process.cwd());
+    const styleCapped = (styleMetrics && styleMetrics.capped) || {};
+    let drift = contractLib.lintTokenDrift(
+      styleMetrics && styleMetrics.values, contract, baseline, styleCapped
+    );
+
+    // 래칫 — 계약 도입 첫 회차에는 기존 위반을 baseline으로 동결한다.
+    // (브라운필드에서 첫 실행부터 수백 건 위반으로 점수가 0이 되어 아무도 못 쓰는 교착 방지.
+    //  이후 회차는 '새로 생긴 위반'만 -2로 강하게 처벌하고 baseline 잔여는 -0.1로 완만히 압박.
+    //  재기준선이 필요하면 token-baseline.json을 삭제하면 된다.)
+    if (drift.enabled && !baseline) {
+      contractLib.writeTokenBaseline(drift, process.cwd());
+      baseline = contractLib.readTokenBaseline(process.cwd());
+      drift = contractLib.lintTokenDrift(styleMetrics && styleMetrics.values, contract, baseline, styleCapped);
+      console.log(`  Token baseline created: ${drift.totalViolations} pre-existing violation(s) frozen`);
+    }
+
+    const koreanLint = contractLib.lintKoreanTypography(koreanMetrics);
+    const stateLint = contractLib.lintStateContract(stateMetrics);
+    const ruleFailures = contractLib.summarizeRuleFailures(drift, koreanLint, stateLint);
+
     // 스코어 환산
-    const consistency = scoreConsistency(styleMetrics);
+    const consistency = scoreConsistency(styleMetrics, drift);
     const perf = scorePerformance(perfMetrics);
 
     // Design Health Score 산출 + 이력
@@ -677,18 +979,30 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
     const healthScore = calculateDesignHealthScore(
       wcagReport, scoredConsole, scoredPage, consistency.score, perf.score
     );
+    // styleMetrics.values는 값별 출현 목록(최대 200종×5범주)이라 리포트에 그대로 넣으면
+    // health-score.json이 비대해진다. 위반 내역은 tokenDrift에 이미 담기므로 집계만 남긴다.
+    const { values: _rawStyleValues, ...styleMetricsSummary } = styleMetrics || {};
+
     const savedReport = saveHealthScore(healthScore, {
-      styleMetrics,
+      styleMetrics: styleMetrics ? styleMetricsSummary : null,
       styleScore: consistency,
       perfMetrics,
       perfScore: perf,
       touchTargets,
       wcagMobileViolations: wcagMobile ? wcagMobile.summary.violations : null,
+      tokenDrift: drift,
+      koreanTypography: koreanLint,
+      stateContract: stateLint,
+      ruleFailures,
     }, {
       // 측정 모드/라우트를 이력에 태깅 → 재캡처(8단계) 시 동종 baseline만 비교
       mode: options.wcag ? 'full' : 'no-wcag',
       route: primaryRoute,
+      // 계약 유무로 styleFit 산식이 달라지므로 이력에 함께 태깅 (크로스 산식 비교 차단)
+      styleMode: drift.enabled ? 'contract' : 'heuristic',
     });
+
+    printRuleFailures(ruleFailures, drift);
 
     return {
       results,
@@ -696,6 +1010,8 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
       wcagMobile,
       healthScore: savedReport,
       touchTargets,
+      tokenDrift: drift,
+      ruleFailures,
       consoleErrors: consoleErrors.length,
       pageErrors: pageErrors.length,
     };
@@ -1004,6 +1320,9 @@ module.exports = {
   sanitizeRouteName,
   validatePathWithinDir,
   readPreviousScore,
+  printRuleFailures,
+  // 계약 린트는 design-contract.cjs의 순수 함수를 재노출 (테스트/게이트 소비 편의)
+  contract: contractLib,
 };
 
 if (require.main === module) {
