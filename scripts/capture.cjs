@@ -294,12 +294,21 @@ async function withRetry(fn, retries = CONFIG.retries) {
   }
 }
 
+// 프로브 타임아웃 — 캡처 타임아웃(CONFIG.timeout)에서 파생한다.
+// 5s 고정이면 느리게 뜨는 개발 서버(TIMEOUT=60000으로 올려 둔 프로젝트)가 "죽었다"로 오판되고,
+// 반대로 CONFIG.timeout을 그대로 쓰면 프로브 한 바퀴가 캡처보다 오래 걸린다. 상한을 둔다.
+const PROBE_TIMEOUT_MAX = 15000;
+
+function probeTimeout() {
+  return Math.max(1, Math.min(CONFIG.timeout, PROBE_TIMEOUT_MAX));
+}
+
 // 서버/라우트 도달성 프로브.
 // 반환: { ok, status, error }  error는 'ECONNREFUSED' | 'TIMEOUT' | 'NETWORK' | null
-async function checkServer(url) {
+async function checkServer(url, timeoutMs = probeTimeout()) {
   const http = url.startsWith('https') ? require('https') : require('http');
   return new Promise((resolve) => {
-    const req = http.get(url, { timeout: 5000 }, (res) => {
+    const req = http.get(url, { timeout: timeoutMs }, (res) => {
       res.resume(); // 소켓 반환 (본문은 필요 없음)
       const ok = res.statusCode >= 200 && res.statusCode < 400;
       resolve({ ok, status: res.statusCode, error: null });
@@ -315,33 +324,87 @@ async function checkServer(url) {
   });
 }
 
+// 프로브 결과 → 서버/라우트 판정. **순수 함수**(네트워크·시계 없음)라 단위 테스트가 된다.
+//
+// status:
+//   reachable            — 하나 이상이 실제로 응답했다. 서버는 살아 있다.
+//   down                 — 응답이 0건이고 ECONNREFUSED가 하나라도 있다 → 서버 미기동.
+//                          **이때만** 즉시 중단한다.
+//   unreachable(timeout) — 응답이 0건인데 전부 TIMEOUT이다. 연결이 거부된 적이 없으므로
+//                          "서버가 없다"는 증거가 아니다(느린 기동·방화벽·프록시). 중단하지 않고
+//                          캡처를 시도해 라우트별 실패로 정직하게 남긴다.
+//                          (예전에는 `probes.every(p => p.error !== null)`이라 전부 TIMEOUT도
+//                           SERVER_DOWN으로 단정하고 exit 1 했다.)
+//   unreachable          — 응답 0건 + 그 밖의 연결 오류(ENOTFOUND 등)가 섞여 있다.
+//
+// 라우트 분류:
+//   reachable[] — 2xx/3xx. 캡처 대상.
+//   attempt[]   — 프로브가 답을 못 받았지만 서버가 죽었다고 단정할 수 없는 라우트(TIMEOUT 등).
+//                 캡처를 시도한다(puppeteer는 CONFIG.timeout으로 더 오래 기다린다).
+//   skipped[]   — 서버가 4xx/5xx로 답했거나 연결이 거부된 라우트. 시도하지 않는다.
+function classifyProbes(probes) {
+  const list = (Array.isArray(probes) ? probes : []).filter(Boolean);
+  const responded = list.filter(p => !p.error);
+  const refused = list.filter(p => p.error === 'ECONNREFUSED');
+  const timedOut = list.filter(p => p.error === 'TIMEOUT');
+
+  let status = 'unknown';
+  let downReason = null;
+  if (list.length === 0) {
+    status = 'unknown';
+  } else if (responded.length > 0) {
+    status = 'reachable';
+  } else if (refused.length > 0) {
+    status = 'down';
+    downReason = 'ECONNREFUSED';
+  } else if (timedOut.length === list.length) {
+    status = 'unreachable(timeout)';
+  } else {
+    status = 'unreachable';
+  }
+
+  const reachable = [];
+  const attempt = [];
+  const skipped = [];
+  for (const p of list) {
+    if (!p.error) {
+      if (p.ok) reachable.push(p.route);
+      else skipped.push({ route: p.route, reason: `HTTP ${p.status}`, status: p.status });
+      continue;
+    }
+    if (p.error === 'ECONNREFUSED') {
+      skipped.push({ route: p.route, reason: 'connection ECONNREFUSED', status: 0 });
+      continue;
+    }
+    attempt.push({ route: p.route, reason: `connection ${p.error}` });
+  }
+
+  return {
+    status,
+    down: status === 'down',
+    downReason,
+    probes: list,
+    reachable,
+    attempt,
+    skipped,
+  };
+}
+
 // 대상 라우트를 전부 프로브해 "서버가 안 떠 있다"와 "그 라우트가 404다"를 구분한다.
 // 루트(/)가 404인 SPA/서브패스 앱에서 전체 캡처가 통째로 중단되던 문제(총체적 abort)를 없앤다.
-//   down    : 모든 프로브가 연결 자체에 실패 → 서버 미기동. 이때만 즉시 중단한다.
-//   reachable / skipped : 라우트별 판정. 4xx/5xx 라우트는 사유를 남기고 건너뛴다.
+// 판정은 classifyProbes(순수 함수)가 한다 — 여기서는 IO만 한다.
 async function probeTargets(baseUrl, routes) {
   const list = (Array.isArray(routes) && routes.length > 0) ? routes : ['/'];
   const probes = [];
   for (const route of list) {
     const r = await checkServer(baseUrl + route);
     probes.push({ route, status: r.status, ok: r.ok, error: r.error });
-    // 연결 거부는 라우트가 아니라 서버의 상태다. 첫 프로브가 ECONNREFUSED면 나머지 라우트도
-    // 같은 소켓에 같은 답을 받을 뿐이므로 라우트 수 × 5s를 기다리지 않고 즉시 down으로 단락한다.
-    // (TIMEOUT·ENOTFOUND 등은 라우트별로 다를 수 있으므로 계속 프로브한다.)
-    if (r.error === 'ECONNREFUSED') break;
+    // 연결 거부는 라우트가 아니라 서버의 상태다. **아직 아무 라우트도 응답하지 않은 상태에서**
+    // 연결이 거부되면 나머지 라우트도 같은 소켓에 같은 답을 받을 뿐이므로 즉시 단락한다.
+    // (이미 응답한 라우트가 있으면 서버는 살아 있는 것이므로 나머지도 끝까지 프로브한다.)
+    if (r.error === 'ECONNREFUSED' && probes.every(p => p.error === 'ECONNREFUSED')) break;
   }
-  const connectionFailed = probes.every(p => p.error !== null);
-  return {
-    down: connectionFailed,
-    downReason: connectionFailed ? (probes[0].error || 'NETWORK') : null,
-    probes,
-    reachable: probes.filter(p => p.ok).map(p => p.route),
-    skipped: probes.filter(p => !p.ok).map(p => ({
-      route: p.route,
-      reason: p.error ? `connection ${p.error}` : `HTTP ${p.status}`,
-      status: p.status,
-    })),
-  };
+  return classifyProbes(probes);
 }
 
 // ============================================
@@ -651,6 +714,40 @@ const FOCUS_HELPERS = `
     }
     return parts.join(' > ').slice(0, 120);
   };
+  // 페이지 CSS에서 ':focus-visible'을 포함한 규칙의 **기저 셀렉터**를 모은다.
+  // 요소별 강등 판정에 쓴다 — "페이지 어딘가에 규칙이 하나라도 있으면 전 요소 강등"은
+  // DP-S002를 사실상 도달 불가로 만든다. 이 요소를 겨냥한 규칙이 있을 때만 강등해야 한다.
+  // 기저 셀렉터 = ':focus-visible'과 의사요소/동적 의사클래스를 제거한 것
+  // (el.matches(':focus-visible')은 포커스 시점에만 참이라 사후 비교에는 쓸 수 없다).
+  const __focusVisibleSelectors = () => {
+    const out = [];
+    let unreadable = 0;
+    const push = (selectorText) => {
+      for (const part of String(selectorText).split(',')) {
+        if (part.indexOf(':focus-visible') === -1) continue;
+        const base = part
+          .replace(/::[a-z-]+/g, '')
+          .replace(/:focus-visible/g, '')
+          .replace(/:(?:hover|active|focus|focus-within|visited|target)\b/g, '')
+          .trim();
+        out.push(base || '*');   // ':focus-visible { }' 단독 규칙 → 모든 요소 대상
+      }
+    };
+    const walk = (list) => {
+      for (const r of Array.from(list || [])) {
+        if (out.length >= 300) return;
+        if (typeof r.selectorText === 'string' && r.selectorText.indexOf(':focus-visible') !== -1) push(r.selectorText);
+        if (r.cssRules) walk(r.cssRules);   // @media / @supports 중첩
+      }
+    };
+    for (const sheet of Array.from(document.styleSheets || [])) {
+      let rules = null;
+      try { rules = sheet.cssRules; } catch (_) { unreadable++; continue; }
+      if (!rules) { unreadable++; continue; }
+      walk(rules);
+    }
+    return { selectors: out, unreadable };
+  };
 `;
 
 // 컴포넌트 상태 계약 원자료 수집 (disabled 표현 / 포커스 가시성 / 클릭 어포던스).
@@ -727,6 +824,7 @@ async function collectFocusVisibility(page, max = FOCUS_TRAVERSAL_MAX, budgetMs 
   const deadline = Date.now() + budgetMs;
   const unavailable = {
     focusable: [], focusMeasured: 0, focusMethod: 'unavailable',
+    focusRuleMeasured: false, focusVisibleSelectorCount: 0, focusRuleUnreadableStylesheets: 0,
     focusTraversalCapped: false, focusTimedOut: false,
   };
 
@@ -774,27 +872,40 @@ async function collectFocusVisibility(page, max = FOCUS_TRAVERSAL_MAX, budgetMs 
   if (focused.length >= max) capped = true;
 
   // 포커스 해제 후 비포커스 시그니처를 읽어 비교하고, 표식/임시 tabindex를 원복한다.
-  let focusable = [];
+  let measured = null;
   let restored = false;
   try {
-    focusable = await page.evaluate(new Function('entries', `
+    measured = await page.evaluate(new Function('entries', `
       ${FOCUS_HELPERS}
       try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (_) {}
+      const fv = __focusVisibleSelectors();
+      const matchesFocusVisible = (el) => {
+        for (const sel of fv.selectors) {
+          try { if (el.matches(sel)) return true; } catch (_) { /* 파싱 불가 셀렉터는 건너뜀 */ }
+        }
+        return false;
+      };
       const out = [];
       for (const entry of entries) {
         const el = document.querySelector('[data-dp-focus-probe="' + entry.index + '"]');
         if (!el) continue;
-        out.push({ selector: entry.selector, focusChanged: __sig(getComputedStyle(el)) !== entry.sig });
+        out.push({
+          selector: entry.selector,
+          focusChanged: __sig(getComputedStyle(el)) !== entry.sig,
+          // 이 요소를 겨냥한 :focus-visible 규칙이 있는가 (강등 근거)
+          focusVisibleRule: matchesFocusVisible(el),
+        });
       }
       document.querySelectorAll('[data-dp-focus-probe]').forEach(el => el.removeAttribute('data-dp-focus-probe'));
       const origin = document.querySelector('[data-dp-focus-origin]');
       if (origin) { origin.removeAttribute('tabindex'); origin.removeAttribute('data-dp-focus-origin'); }
-      return out;
+      return { items: out, focusVisibleSelectorCount: fv.selectors.length, unreadableStylesheets: fv.unreadable };
     `), focused);
     restored = true;
   } catch (_) {
-    focusable = [];
+    measured = null;
   }
+  const focusable = (measured && Array.isArray(measured.items)) ? measured.items : [];
 
   // Tab이 한 요소도 잡지 못했으면 "포커스 가능한 요소가 없다"와 "키보드 포커스를 못 걸었다"를
   // 구분할 수 없다. 단정하지 않도록 focusMethod를 unavailable로 남겨 린트가 강등하게 한다.
@@ -806,6 +917,11 @@ async function collectFocusVisibility(page, max = FOCUS_TRAVERSAL_MAX, budgetMs 
     focusable,
     focusMeasured: focusable.length,
     focusMethod: 'keyboard-tab',
+    // 요소별 :focus-visible 매칭을 실제로 쟀다는 표식 — 린트가 "페이지 전역 규칙 하나로
+    // 전 요소 강등"이라는 옛 fail-open으로 되돌아가지 않게 하는 근거.
+    focusRuleMeasured: true,
+    focusVisibleSelectorCount: measured.focusVisibleSelectorCount || 0,
+    focusRuleUnreadableStylesheets: measured.unreadableStylesheets || 0,
     focusTraversalCapped: capped,
     focusTimedOut: timedOut,
   };
@@ -938,13 +1054,23 @@ function readPreviousScore(mode, route, styleMode, viewports) {
 // "최근 N회를 눈으로 비교해 정체면 접근을 바꿔라"는 지시는 모델에게 산수를 시킨다.
 // 스크립트가 결정론적으로 계산하고 SKILL은 값만 인용한다.
 //   scores: 최신순 점수 배열. spread(최댓값-최솟값)가 tolerance 이내면 정체.
-//   delta : 최신 - 가장 오래된 (방향)
+//   delta : 최신 - 가장 오래된 (방향). 점수가 내려왔으면 음수다.
+//
+// 반환 필드의 의미를 분리한다 (v2.7.0):
+//   runs     — 판정에 넘어온 **실제 동일 태그 회차 수**(현재 회차 포함). 항상 같은 뜻.
+//   window   — 판정에 실제로 사용한 최근 회차 수(= 창 크기).
+//   required — 판정에 필요한 최소 회차 수.
+// 예전에는 `runs`가 insufficient일 때만 실제 회차 수였고 그 외에는 창 크기(3)라서
+// 같은 필드가 두 가지를 뜻했다(리포트 문구가 "최근 3회"인지 "3회 모였다"인지 구분 불가).
 const STAGNATION_RUNS = 3;
 
 function classifyStagnation(scores, runs = STAGNATION_RUNS, tolerance = REGRESSION_TOLERANCE) {
   const list = (Array.isArray(scores) ? scores : []).filter(Number.isFinite);
   if (list.length < runs) {
-    return { status: 'insufficient', delta: null, spread: null, runs: list.length, required: runs, scores: list };
+    return {
+      status: 'insufficient', delta: null, spread: null,
+      runs: list.length, window: 0, required: runs, tolerance, scores: list,
+    };
   }
   const window = list.slice(0, runs);          // 최신순
   const newest = window[0];
@@ -955,7 +1081,8 @@ function classifyStagnation(scores, runs = STAGNATION_RUNS, tolerance = REGRESSI
     status: spread <= tolerance ? 'stagnant' : 'none',
     delta: round(newest - oldest),
     spread,
-    runs,
+    runs: list.length,
+    window: window.length,
     required: runs,
     tolerance,
     scores: window,
@@ -1087,7 +1214,7 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
     const st = report.stagnation;
     console.log(st.status === 'insufficient'
       ? `  stagnation: insufficient (${st.runs}/${st.required} runs)`
-      : `  stagnation: ${st.status} (last ${st.runs} runs, delta ${st.delta >= 0 ? '+' : ''}${st.delta}, spread ${st.spread})`);
+      : `  stagnation: ${st.status} (last ${st.window} of ${st.runs} runs, delta ${st.delta >= 0 ? '+' : ''}${st.delta}, spread ${st.spread})`);
   }
   if (report.baseline && report.baseline.status && report.baseline.status !== 'n/a') {
     console.log(`  token baseline: ${report.baseline.status}${report.baseline.reason ? ` (${report.baseline.reason})` : ''}`);
@@ -1155,12 +1282,16 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
   for (const sk of probe.skipped) {
     console.warn(`Skipping route ${sk.route}: ${sk.reason}`);
   }
-  const targetRoutes = probe.reachable;
+  for (const at of (probe.attempt || [])) {
+    // 프로브는 답을 못 받았지만 서버가 죽었다는 증거는 없다 — 캡처를 시도하고 실패하면 그때 남긴다.
+    console.warn(`Probe inconclusive for ${at.route}: ${at.reason} — attempting capture anyway`);
+  }
+  const targetRoutes = probe.reachable.concat((probe.attempt || []).map(a => a.route));
   if (targetRoutes.length === 0) {
     console.error(JSON.stringify({
       error: 'NO_REACHABLE_ROUTE', baseUrl: CONFIG.baseUrl, skipped: probe.skipped,
     }, null, 2));
-    console.error('서버는 응답하지만 지정한 라우트가 모두 4xx/5xx입니다. BASE_URL 또는 --routes를 확인하세요.');
+    console.error('서버는 응답하지만 지정한 라우트가 모두 4xx/5xx이거나 연결이 거부되었습니다. BASE_URL 또는 --routes를 확인하세요.');
     process.exit(2);
   }
   routes = targetRoutes;
@@ -1464,13 +1595,17 @@ async function wcagOnly(routes) {
   for (const sk of probe.skipped) {
     console.warn(`Skipping route ${sk.route}: ${sk.reason}`);
   }
-  if (probe.reachable.length === 0) {
+  for (const at of (probe.attempt || [])) {
+    console.warn(`Probe inconclusive for ${at.route}: ${at.reason} — attempting capture anyway`);
+  }
+  const wcagRoutes = probe.reachable.concat((probe.attempt || []).map(a => a.route));
+  if (wcagRoutes.length === 0) {
     console.error(JSON.stringify({
       error: 'NO_REACHABLE_ROUTE', baseUrl: CONFIG.baseUrl, skipped: probe.skipped,
     }, null, 2));
     process.exit(2);
   }
-  routes = probe.reachable;
+  routes = wcagRoutes;
 
   if (!AxePuppeteer) {
     console.error('axe-core/puppeteer not installed. Run: npm install @axe-core/puppeteer');
@@ -1595,19 +1730,41 @@ Output:
 `);
 }
 
+// 캡처 결과 → 성공 판정. **순수 함수**(테스트 대상).
+//
+// 프로브에서 걸러진 라우트(`skipped`)는 **시도하지 않은 것**이지 실패한 것이 아니다.
+// 예전에는 이 항목들이 `success: false`로 결과 배열에 들어가 `every(r => r.success !== false)`를
+// 무너뜨렸고, 404 라우트 하나가 나머지 라우트를 전부 정상 캡처한 실행을 exit 1로 만들었다
+// (프로브가 "총체적 abort"를 없애려고 도입됐는데 종료 코드에서 되살아난 셈).
+function summarizeCaptureResults(results) {
+  const list = (Array.isArray(results) ? results : []).filter(Boolean);
+  const skipped = list.filter(r => r.skipped);
+  const attempted = list.filter(r => !r.skipped);
+  const failed = attempted.filter(r => r.success === false);
+  return {
+    total: list.length,
+    attempted: attempted.length,
+    skipped: skipped.length,
+    failed: failed.length,
+    success: attempted.length > 0 && failed.length === 0,
+  };
+}
+
 function printJsonResult(type, data) {
   let allSuccess;
+  let summary = null;
   if (type === 'wcag' && data.reports) {
     allSuccess = data.reports.length > 0 && (!data.failures || data.failures.length === 0);
   } else {
-    const results = data.results || data.screenshots || [];
-    allSuccess = results.length > 0 && results.every(r => r.success !== false);
+    summary = summarizeCaptureResults(data.results || data.screenshots || []);
+    allSuccess = summary.success;
   }
   const output = {
     success: allSuccess,
     type,
     outputDir: CONFIG.outputDir,
-    ...data
+    ...data,
+    ...(summary ? { resultSummary: summary } : {}),
   };
   console.log('\n--- JSON_RESULT_START ---');
   console.log(JSON.stringify(output, null, 2));
@@ -1687,6 +1844,13 @@ async function main() {
 module.exports = {
   scoreConsistency,
   scoreTokenDriftPenalty,
+  summarizeCaptureResults,
+  classifyProbes,
+  probeTargets,
+  checkServer,
+  probeTimeout,
+  PROBE_TIMEOUT_MAX,
+  collectFocusVisibility,
   CONTRACT_PENALTY,
   STYLE_FIT_MAX,
   scorePerformance,
@@ -1703,6 +1867,7 @@ module.exports = {
   validatePathWithinDir,
   readPreviousScore,
   printRuleFailures,
+  printJsonResult,
   // 계약 린트는 design-contract.cjs의 순수 함수를 재노출 (테스트/게이트 소비 편의)
   contract: contractLib,
 };

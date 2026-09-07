@@ -1,8 +1,8 @@
 ---
 name: design-polish
-description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 66개 스타일/96개 색상/57개 타이포 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
+description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 스타일/색상/타이포 BM25 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.6.0"
+version: "2.7.0"
 ---
 
 # 디자인 폴리싱 스킬
@@ -432,14 +432,21 @@ Read(".design-polish/health-score.json")
     { "id": "DP-K001", "severity": "HIGH", "title": "한글 텍스트에 serif fallback 폰트 스택", "count": 12 }
   ],
   "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression", "styleMode": "contract" },
-  "stagnation": { "status": "stagnant", "delta": 1, "spread": 2, "runs": 3, "required": 3, "tolerance": 3, "scores": [75, 74, 76] },
+  "stagnation": { "status": "stagnant", "delta": -1, "spread": 2, "runs": 3, "window": 3, "required": 3, "tolerance": 3, "scores": [75, 74, 76] },
   "ruleFailureSummary": { "rules": { "CRITICAL": 2, "HIGH": 1, "MEDIUM": 0, "LOW": 0 },
                           "violations": { "CRITICAL": 9, "HIGH": 12, "MEDIUM": 0, "LOW": 0 },
-                          "totalRules": 3, "totalViolations": 21, "blockingRules": 3, "blockingViolations": 21 },
+                          "actionable": { "CRITICAL": 5, "HIGH": 12, "MEDIUM": 0, "LOW": 0 },
+                          "totalRules": 3, "totalViolations": 21, "totalActionableViolations": 17,
+                          "blockingRules": 3, "blockingViolations": 21, "blockingNewViolations": 17 },
   "baseline": { "status": "reused", "reason": "contract unchanged" },
-  "viewports": "desktop,mobile"
+  "viewports": "desktop,mobile,tablet"
 }
 ```
+
+> 위 예시는 `--responsive` 실행이라 `viewports`가 `"desktop,mobile,tablet"`입니다.
+> `viewports`는 `viewportTag`가 **사용한 뷰포트 이름을 정렬해 `,`로 이은 값**이며,
+> 기본 실행(반응형 아님)은 `"desktop"` 하나뿐입니다. 임의의 조합을 지어내지 마십시오.
+> (모바일 a11y 재방문은 별도 패스라 이 태그에 들어가지 않습니다.)
 
 **`ruleFailures[]`는 스크립트가 결정론적으로 판정한 결과다.** 심각도를 재해석하거나 임의로 누락하지 않고
 5·6단계 개선안에 **그대로** 옮긴다. 신규 토큰 위반(`newCount > 0`)은 CRITICAL로 승격되어 항상 최상단에 온다.
@@ -457,7 +464,18 @@ capture.cjs가 `health-history.jsonl`에서 **동일 `mode`+`route`+`styleMode`+
 | `stagnant` | 최근 3회 점수 폭(`spread`)이 dead-band(±3) 이내 — 개선이 멈춤 |
 | `none` | 밴드를 벗어나 움직이는 중 (상승이든 하락이든 정체는 아님) |
 
-- 보고 문구에는 `stagnation.scores`(최신순 3개)와 `delta`를 그대로 인용합니다.
+**`runs`와 `window`는 다른 값입니다 (v2.7.0).**
+
+| 필드 | 의미 |
+|------|------|
+| `runs` | 판정에 넘어온 **실제 동일 태그 회차 수**(이번 회차 포함). 상태와 무관하게 항상 같은 뜻 |
+| `window` | 판정에 실제로 사용한 최근 회차 수(창 크기, 보통 3). `insufficient`면 `0` |
+| `required` | 판정에 필요한 최소 회차 수(3) |
+
+> 예전에는 `runs`가 `insufficient`일 때만 실제 회차 수였고 그 외에는 창 크기(3)를 뜻해,
+> "3회 모였다"인지 "최근 3회를 봤다"인지 문구에서 구분되지 않았습니다.
+
+- 보고 문구에는 `stagnation.scores`(최신순 `window`개)와 `delta`(최신 − 가장 오래된, 하락이면 음수)를 그대로 인용합니다.
 - 이력 라인을 직접 세어 "2~3회 비슷하니 정체"라고 판단하는 것은 **금지**입니다. 라우트/뷰포트/
   측정 모드가 섞인 라인을 눈으로 거르다 오신호를 내던 것이 이 판정을 스크립트로 옮긴 이유입니다.
 
@@ -479,16 +497,23 @@ Health Score와 점수 추세를 기반으로 **현재 방향 개선(Refine)** v
 | 조건 (읽는 필드) | 결정 | 행동 |
 |------------------|------|------|
 | `score` ≥ 60 **AND** (`regression` 없음 또는 `regression.status != "regression"`) | **Refine** | 현재 design-polish 플로우 계속 (2~7단계) |
-| `score` < 40 **OR** `ruleFailureSummary.blockingViolations` ≥ 5 | **Pivot 권고** | 사용자에게 `/design-renewal` 전환 제안 |
+| `score` < 40 **OR** `ruleFailureSummary.blockingNewViolations` ≥ 5 | **Pivot 권고** | 사용자에게 `/design-renewal` 전환 제안 |
 | 40 ≤ `score` < 60 | **조건부 판단** | Gap 분석(4단계) 결과까지 확인 후 결정 |
 | `stagnation.status == "stagnant"` **AND** `score` < 80 | **Pivot 권고** | 점수 정체 → 방향 전환 필요 알림 (80 이상에서 멈춘 것은 정체가 아니라 **수렴** — Refine 유지) |
 
-> **왜 `blockingViolations`인가 (v2.6.0)**: 예전 기준은 "P1+P2 위반 합계 ≥ 5건"이었는데,
+> **왜 `blockingNewViolations`인가 (v2.7.0)**: 토큰 드리프트 규칙(`DP-T*`)의 `count`는
+> **baseline 동결분을 포함한 총 위반**이다. 총량인 `blockingViolations`를 임계에 걸면,
+> 계약을 막 도입한 브라운필드가 **신규 위반 1건**뿐인데도 도입 시점에 동결한 옛 부채 때문에
+> 곧바로 "전면 리뉴얼" 권고를 받았다 — 래칫("기존 부채는 동결, 신규만 차단")이 Pivot 경로에서만
+> 무너지고 있었다. 이제는 조치 대상만 세는 `blockingNewViolations`
+> (= CRITICAL+HIGH 중 **토큰 규칙은 `newCount`**, 나머지 규칙은 `count`)를 인용한다.
+> `blockingViolations`(총량)는 보고용으로 남는다 — 임계 판정에 쓰지 말 것.
+>
+> **왜 스크립트가 세는가 (v2.6.0)**: 예전 기준은 "P1+P2 위반 합계 ≥ 5건"이었는데,
 > P1/P2는 **5단계 개선안 우선순위**다. 즉 Pivot(=5단계로 갈지 말지)을 정하려면 5단계 결과가
 > 먼저 있어야 하는 순환이었고, 실제로는 모델이 그때그때 눈대중으로 세는 값이 됐다.
 > 이제는 스크립트가 `ruleFailures`(결정론적 룰 판정)를 심각도별로 집계한
-> `ruleFailureSummary.blockingViolations`(= CRITICAL + HIGH 위반 건수)를 인용한다.
-> **P1/P2 개수를 세지 말 것.**
+> `ruleFailureSummary`를 인용한다. **P1/P2 개수를 세지 말 것.**
 
 ### 판단 흐름
 
@@ -500,16 +525,17 @@ score ≥ 60 + regression 아님/첫 실행?
     │         → 2단계로 진행
     └─ NO
         ↓
-score < 40 OR ruleFailureSummary.blockingViolations >= 5?
+score < 40 OR ruleFailureSummary.blockingNewViolations >= 5?
     ├─ YES → 🔄 Pivot 권고
-    │         → "Health Score [score]점, 차단급(CRITICAL+HIGH) 위반 [blockingViolations]건 — 현재 디자인 방향의 근본적 한계가 감지됩니다."
+    │         → "Health Score [score]점, 조치 대상 차단급(CRITICAL+HIGH) 위반 [blockingNewViolations]건
+    │            (총 [blockingViolations]건 중 baseline 동결분 제외) — 현재 디자인 방향의 근본적 한계가 감지됩니다."
     │         → "💡 `/design-renewal`로 전면 리뉴얼을 권장합니다. 계속 polish하시겠습니까?"
     │         → 사용자 확인 대기
     └─ NO (40~60 구간)
         ↓
 stagnation.status == "stagnant" AND score < 80?   (insufficient면 이 분기를 타지 않는다; ≥80 정체는 수렴)
     ├─ YES → 🔄 Pivot 권고
-    │         → "최근 [runs]회 점수가 [scores] 로 정체(폭 [spread]) — 개선 한계에 도달한 것으로 보입니다."
+    │         → "최근 [window]회 점수가 [scores] 로 정체(폭 [spread]) — 개선 한계에 도달한 것으로 보입니다."
     │         → "💡 `/design-renewal`로 방향 전환을 권장합니다."
     │         → 사용자 확인 대기
     └─ NO → ⚠️ 조건부 Refine
@@ -928,9 +954,16 @@ Read(".design-polish/health-score.json") → regression 필드 확인
 
 ### 시각 품질
 - [ ] 색상 대비 4.5:1 이상 (WCAG AA)
-- [ ] 일관된 border-radius (8px/12px/16px 중 택일)
-- [ ] 일관된 spacing scale (예: 4/8/12/16/24/32px)
 - [ ] 폰트 계층 명확 (h1 > h2 > h3 > body > caption)
+
+**아래 두 항목은 `heuristic` 모드(계약 없음) 한정입니다** — `styleMode`가 `contract`이면
+계약이 허용한 토큰이 정답이므로, 여기 적힌 예시 스케일이 아니라
+`design-decisions.json`의 허용 값과 `tokenDrift` 결과를 기준으로 확인합니다
+(1.8단계 "계약 모드에서는 값이 몇 종이든 상관없다"와 충돌하지 않게 하기 위함).
+
+- [ ] (heuristic) 일관된 border-radius (예: 8px/12px/16px 중 택일)
+- [ ] (heuristic) 일관된 spacing scale (예: 4/8/12/16/24/32px)
+- [ ] (contract) `tokenDrift.newViolationCount == 0` — 신규 계약 위반 없음
 
 ### 인터랙션
 - [ ] 모든 클릭 가능 요소에 `cursor: pointer`

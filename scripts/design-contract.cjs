@@ -269,14 +269,21 @@ function readTokenBaseline(cwd = process.cwd()) {
   }
 }
 
-// baseline이 "지금 이 계약"에 대해 아직 유효한지 판정한다.
-//   fresh                        — baseline 파일이 없다(최초 실행). 지금 상태를 동결한다.
-//   reused                       — 계약 해시가 일치. 기존 동결을 그대로 쓴다.
-//   refrozen(contract changed)   — 계약이 바뀌었다(해시 불일치). 해시가 없는 구버전 파일은 버리지 않고
-//                                  reused + needsRewrite로 채택한다(신규 부채 흡수 방지).
-//                                  옛 동결은 다른 계약 기준이라 신규 판정의 근거가 될 수 없으므로
-//                                  버리고 현재 위반을 새 baseline으로 재동결한다.
-// 반환: { status, stale, baseline, reason } — baseline은 재사용 가능할 때만 non-null.
+// baseline이 "지금 이 계약"에 대해 아직 유효한지 판정한다. 분기는 셋뿐이다:
+//
+//   fresh                        — baseline 파일이 없다(최초 실행). 호출자가 지금 상태를 동결한다.
+//   reused                       — 기존 동결을 그대로 쓴다. 두 경로가 있다:
+//                                    (a) 계약 해시 일치 — 정상 재사용.
+//                                    (b) legacy-adopt: 해시가 없는 v2.5 이하 파일. 어떤 계약으로
+//                                        동결했는지 증명할 수 없지만, 버리고 재동결하면 업그레이드
+//                                        시점까지 쌓인 신규 부채가 baseline에 흡수된다(래칫 무력화).
+//                                        그래서 동결값은 **채택**하고 needsRewrite: true로 표시해
+//                                        호출자가 contractHash만 덧붙여 파일을 다시 쓰게 한다.
+//   refrozen(contract changed)   — 해시가 있고 불일치. 옛 동결은 다른 계약 기준이라 신규 판정의
+//                                  근거가 될 수 없으므로 버리고(baseline: null) 현재 위반을 재동결한다.
+//
+// 반환: { status, stale, baseline, contractHash, reason, needsRewrite? }
+//       baseline은 재사용 가능할 때만 non-null. stale은 refrozen에서만 true.
 function resolveTokenBaseline(baseline, contract) {
   const hash = hashContract(contract);
   if (!baseline) {
@@ -553,9 +560,44 @@ function lintKoreanTypography(metrics) {
 //
 // 그럼에도 변화가 안 잡히는 경우가 남는다 — 포커스 표시가 ::after/::before 의사요소,
 // SVG filter, 상위 요소 스타일로 구현되면 대상 요소의 computed style은 그대로다.
-// 그래서 페이지 CSS에 :focus-visible 규칙이 **하나라도** 있으면(hasFocusVisibleRule)
-// 개별 '변화 없음'은 위반이 아니라 INFO로 강등한다(fail-open) — 저자가 명시적으로
-// 키보드 포커스를 스타일링했다는 증거가 있는데 계측 한계로 사람을 깨우지 않는다.
+// 그래서 강등(INFO)을 두되, **그 근거를 요소 단위로 좁힌다**(v2.7.0):
+//   페이지 어딘가에 :focus-visible 규칙이 하나만 있어도 전 요소를 강등하던 예전 규칙은
+//   DP-S002를 사실상 도달 불가로 만들었다(규칙 하나 = 전 페이지 면죄부).
+//   이제는 그 요소에 **매칭되는** :focus-visible 규칙이 있을 때만 강등한다.
+//
+// 강등 조건(순서대로, 먼저 걸리는 사유를 기록):
+//   1) 실제 키보드 포커스로 재지 못함(focusMethod !== 'keyboard-tab')
+//   2) 읽지 못한 교차 출처 스타일시트가 있음(stylesheetsUnreadable) — 규칙 부재를 증명할 수 없다
+//   3) 그 요소에 매칭되는 :focus-visible 규칙이 있음(focusVisibleRule)
+//   4) 요소별 매칭을 계측하지 못했는데(focusRuleMeasured !== true) 페이지에 규칙은 있음
+//      — 구(舊) 계측 형식 하위호환. 이때만 예전의 전역 fail-open을 유지한다.
+function unreadableStylesheetCount(metrics) {
+  if (!metrics) return 0;
+  const v = metrics.stylesheetsUnreadable;
+  if (v === true) return 1;
+  return Number.isFinite(v) ? Math.max(0, v) : 0;
+}
+
+// 순수 판정부 — 강등하면 { reason }, 아니면 null.
+function focusDemotion(metrics, f) {
+  const m = metrics || {};
+  const focusMethod = m.focusMethod || 'unknown';
+  if (focusMethod !== 'keyboard-tab') {
+    return { reason: `키보드 포커스 계측 실패(focusMethod: ${focusMethod}) — 단정 불가` };
+  }
+  const unreadable = unreadableStylesheetCount(m);
+  if (unreadable > 0) {
+    return { reason: `교차 출처 스타일시트 ${unreadable}건을 읽지 못함 — :focus-visible 규칙 존재 여부 확인 불가` };
+  }
+  if (f && f.focusVisibleRule === true) {
+    return { reason: '이 요소에 매칭되는 :focus-visible 규칙 존재 — 의사요소/상위 요소 구현 가능성' };
+  }
+  if (m.focusRuleMeasured !== true && m.hasFocusVisibleRule === true) {
+    return { reason: '요소별 :focus-visible 매칭 미계측 + 페이지에 규칙 존재 — 단정 불가' };
+  }
+  return null;
+}
+
 function lintStateContract(metrics) {
   if (!metrics || typeof metrics !== 'object') {
     return { enabled: false, reason: 'no state contract measurement' };
@@ -564,9 +606,6 @@ function lintStateContract(metrics) {
   const hits = { 'DP-S001': [], 'DP-S002': [], 'DP-S003': [] };
   const info = [];
   const focusMethod = metrics.focusMethod || 'unknown';
-  // 실제 키보드 포커스로 측정하지 못했으면 DP-S002를 단정하지 않는다.
-  const focusTrusted = focusMethod === 'keyboard-tab';
-  const demoteFocus = !focusTrusted || metrics.hasFocusVisibleRule === true;
 
   for (const d of (metrics.disabled || [])) {
     if (!d) continue;
@@ -579,14 +618,13 @@ function lintStateContract(metrics) {
     if (!f) continue;
     if (f.focusChanged !== false) continue;
     const detail = 'Tab 포커스 시 outline/box-shadow/border/background 변화 없음';
-    if (demoteFocus) {
+    const demoted = focusDemotion(metrics, f);
+    if (demoted) {
       info.push({
         id: 'DP-S002',
         selector: f.selector,
         detail,
-        reason: !focusTrusted
-          ? `키보드 포커스 계측 실패(focusMethod: ${focusMethod}) — 단정 불가`
-          : ':focus-visible 규칙이 페이지에 존재 — 의사요소/상위 요소 구현 가능성',
+        reason: demoted.reason,
       });
     } else {
       hits['DP-S002'].push({ selector: f.selector, detail });
@@ -619,6 +657,8 @@ function lintStateContract(metrics) {
     focusMeasured: metrics.focusMeasured || 0,
     focusMethod,
     hasFocusVisibleRule: metrics.hasFocusVisibleRule === true,
+    focusRuleMeasured: metrics.focusRuleMeasured === true,
+    stylesheetsUnreadable: unreadableStylesheetCount(metrics),
     focusTraversalCapped: metrics.focusTraversalCapped === true,
     focusTimedOut: metrics.focusTimedOut === true,
     // 위반으로 세지 않되 사람이 볼 수 있게 남기는 관측치 (점수·게이트에 영향 없음)
@@ -655,28 +695,52 @@ function summarizeRuleFailures(...lints) {
   return out;
 }
 
+// 토큰 드리프트 규칙(DP-T*)인가 — 이 규칙들만 baseline 동결(래칫) 개념을 가진다.
+const RATCHETED_RULE_IDS = new Set(Object.values(TOKEN_RULE));
+
+// 그 규칙에서 **지금 조치해야 하는** 위반 수.
+//   토큰 규칙   → newCount (baseline 동결분은 래칫이 이미 "지금은 아님"으로 처리했다)
+//   나머지 규칙 → count    (baseline 개념이 없으므로 전부 조치 대상)
+function actionableCount(f) {
+  if (!f) return 0;
+  if (RATCHETED_RULE_IDS.has(f.id)) return Number.isFinite(f.newCount) ? Math.max(0, f.newCount) : 0;
+  return Number.isFinite(f.count) ? Math.max(0, f.count) : 0;
+}
+
 // summarizeRuleFailures 결과 → severity별 집계.
 // Pivot 판정처럼 "모델이 세던 산수"를 스크립트가 결정론적으로 내놓기 위한 순수 함수다.
-//   rules      : severity별 실패한 규칙 수(중복 없는 규칙 ID 기준)
-//   violations : severity별 위반 인스턴스 합계
-//   blockingViolations : CRITICAL + HIGH 위반 인스턴스 합계 (Pivot 기준값)
+//   rules                 : severity별 실패한 규칙 수(중복 없는 규칙 ID 기준)
+//   violations            : severity별 위반 인스턴스 합계(총량 — baseline 동결분 포함, 보고용)
+//   actionable            : severity별 **조치 대상** 위반 수 (토큰 규칙은 newCount만)
+//   blockingViolations    : CRITICAL + HIGH 총량 (보고용, 의미 불변)
+//   blockingNewViolations : CRITICAL + HIGH **조치 대상** 합계 — **Pivot 기준값**
+//
+// 왜 나눴나 (v2.7.0): 토큰 규칙의 count는 baseline 동결분을 포함한 총 위반이다.
+// blockingViolations(총량)을 Pivot 임계(>= 5)에 걸면, 계약을 막 도입한 브라운필드가
+// 신규 위반 1건뿐인데도 도입 시점에 동결한 옛 부채 때문에 곧바로 "전면 리뉴얼 권고"를 받는다.
+// 래칫("기존 부채는 동결, 신규만 차단")의 취지가 Pivot 경로에서만 무너지고 있었다.
 function summarizeSeverity(ruleFailures) {
   const rules = {};
   const violations = {};
-  for (const lv of SEVERITY_LEVELS) { rules[lv] = 0; violations[lv] = 0; }
+  const actionable = {};
+  for (const lv of SEVERITY_LEVELS) { rules[lv] = 0; violations[lv] = 0; actionable[lv] = 0; }
   const list = Array.isArray(ruleFailures) ? ruleFailures : [];
   for (const f of list) {
     const lv = SEVERITY_ORDER[f && f.severity] != null ? f.severity : 'LOW';
     rules[lv] += 1;
     violations[lv] += Number.isFinite(f && f.count) ? f.count : 0;
+    actionable[lv] += actionableCount(f);
   }
   return {
     rules,
     violations,
+    actionable,
     totalRules: list.length,
     totalViolations: SEVERITY_LEVELS.reduce((a, lv) => a + violations[lv], 0),
+    totalActionableViolations: SEVERITY_LEVELS.reduce((a, lv) => a + actionable[lv], 0),
     blockingRules: rules.CRITICAL + rules.HIGH,
     blockingViolations: violations.CRITICAL + violations.HIGH,
+    blockingNewViolations: actionable.CRITICAL + actionable.HIGH,
   };
 }
 
@@ -703,6 +767,10 @@ module.exports = {
   isSerifFallbackStack,
   lintKoreanTypography,
   lintStateContract,
+  focusDemotion,
+  unreadableStylesheetCount,
   summarizeRuleFailures,
   summarizeSeverity,
+  actionableCount,
+  RATCHETED_RULE_IDS,
 };

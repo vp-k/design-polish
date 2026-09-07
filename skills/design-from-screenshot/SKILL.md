@@ -2,7 +2,7 @@
 name: design-from-screenshot
 description: 스크린샷/이미지에서 UI 코드를 생성. Claude 비전으로 디자인 속성을 추출하고, 디자인 지식 DB(BM25)로 매칭하여 프레임워크별 코드 생성. 디자인 계약이 있으면 계약 토큰을 제약으로 사용.
 allowed-tools: Read, Write, Glob, Grep, Bash, Edit
-version: "2.6.0"
+version: "2.7.0"
 ---
 
 # Design from Screenshot

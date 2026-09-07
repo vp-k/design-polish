@@ -620,5 +620,112 @@ test('lintTokenDrift: 값 상한(200종) 도달은 incomplete로 표시하되 �
   assert.strictEqual(typeof r.newViolationCount, 'number');   // 게이트 소비 필드는 그대로
 });
 
+
+// ── focusDemotion (v2.7.0) ──
+test('focusDemotion: 키보드로 계측했고 이 요소에 매칭되는 :focus-visible 규칙이 없으면 강등하지 않는다', () => {
+  const m = { focusMethod: 'keyboard-tab', focusRuleMeasured: true, hasFocusVisibleRule: true, stylesheetsUnreadable: 0 };
+  assert.strictEqual(C.focusDemotion(m, { selector: 'button', focusChanged: false, focusVisibleRule: false }), null);
+});
+
+test('focusDemotion: 이 요소에 매칭되는 :focus-visible 규칙이 있으면 강등', () => {
+  const m = { focusMethod: 'keyboard-tab', focusRuleMeasured: true, stylesheetsUnreadable: 0 };
+  const d = C.focusDemotion(m, { selector: 'a', focusChanged: false, focusVisibleRule: true });
+  assert.ok(d && /focus-visible/.test(d.reason));
+});
+
+test('focusDemotion: 읽지 못한 교차 출처 스타일시트가 있으면 단정 불가로 강등 (거짓 CRITICAL 차단)', () => {
+  const m = { focusMethod: 'keyboard-tab', focusRuleMeasured: true, stylesheetsUnreadable: 2 };
+  const d = C.focusDemotion(m, { selector: 'button', focusChanged: false, focusVisibleRule: false });
+  assert.ok(d && /교차 출처/.test(d.reason));
+});
+
+test('focusDemotion: 키보드 계측 실패가 최우선 강등 사유', () => {
+  const d = C.focusDemotion({ focusMethod: 'unavailable' }, { focusChanged: false, focusVisibleRule: false });
+  assert.ok(d && /focusMethod/.test(d.reason));
+});
+
+test('focusDemotion: 요소별 미계측(구버전)일 때만 페이지 전역 규칙 존재로 강등 — fail-open 하위호환', () => {
+  const legacy = { focusMethod: 'keyboard-tab', focusRuleMeasured: false, hasFocusVisibleRule: true, stylesheetsUnreadable: 0 };
+  assert.ok(C.focusDemotion(legacy, { focusChanged: false }));
+  const legacyNoRule = { focusMethod: 'keyboard-tab', focusRuleMeasured: false, hasFocusVisibleRule: false, stylesheetsUnreadable: 0 };
+  assert.strictEqual(C.focusDemotion(legacyNoRule, { focusChanged: false }), null);
+});
+
+test('unreadableStylesheetCount: boolean true는 1, 숫자는 그대로, 그 외는 0', () => {
+  assert.strictEqual(C.unreadableStylesheetCount({ stylesheetsUnreadable: true }), 1);
+  assert.strictEqual(C.unreadableStylesheetCount({ stylesheetsUnreadable: 3 }), 3);
+  assert.strictEqual(C.unreadableStylesheetCount({ stylesheetsUnreadable: -1 }), 0);
+  assert.strictEqual(C.unreadableStylesheetCount({}), 0);
+  assert.strictEqual(C.unreadableStylesheetCount(null), 0);
+});
+
+// ── lintStateContract: DP-S002 도달 가능성 (v2.7.0) ──
+test('lintStateContract: 페이지에 :focus-visible 규칙이 있어도 매칭 안 되는 요소는 DP-S002로 잡힌다', () => {
+  const r = C.lintStateContract({
+    focusMethod: 'keyboard-tab',
+    focusRuleMeasured: true,
+    hasFocusVisibleRule: true,
+    focusVisibleSelectorCount: 4,
+    stylesheetsUnreadable: 0,
+    focusable: [{ selector: '.custom-tab', focusChanged: false, focusVisibleRule: false }],
+    disabled: [],
+    clickable: [],
+  });
+  const ids = r.findings.map(f => f.id);
+  assert.ok(ids.includes('DP-S002'), 'DP-S002가 도달 가능해야 한다');
+  assert.strictEqual(r.focusRuleMeasured, true);
+  assert.strictEqual(r.stylesheetsUnreadable, 0);
+});
+
+test('lintStateContract: 읽지 못한 스타일시트가 있으면 DP-S002 대신 INFO로 강등된다', () => {
+  const r = C.lintStateContract({
+    focusMethod: 'keyboard-tab',
+    focusRuleMeasured: true,
+    hasFocusVisibleRule: false,
+    stylesheetsUnreadable: 1,
+    focusable: [{ selector: '.custom-tab', focusChanged: false, focusVisibleRule: false }],
+    disabled: [],
+    clickable: [],
+  });
+  assert.ok(!r.findings.some(f => f.id === 'DP-S002'));
+  assert.ok(r.info.length >= 1);
+  assert.strictEqual(r.stylesheetsUnreadable, 1);
+});
+
+// ── actionableCount / summarizeSeverity (v2.7.0) ──
+test('actionableCount: 래칫 규칙(DP-T*)은 newCount, 그 외는 count', () => {
+  assert.strictEqual(C.actionableCount({ id: 'DP-T002', count: 20, newCount: 3 }), 3);
+  assert.strictEqual(C.actionableCount({ id: 'DP-S002', count: 4 }), 4);
+  assert.strictEqual(C.actionableCount({ id: 'DP-T002', count: 20 }), 0);
+});
+
+test('summarizeSeverity: blockingViolations는 총량, blockingNewViolations는 조치 대상만', () => {
+  const s = C.summarizeSeverity([
+    { id: 'DP-T002', severity: 'CRITICAL', count: 20, newCount: 2 },
+    { id: 'DP-S002', severity: 'CRITICAL', count: 3 },
+    { id: 'DP-K001', severity: 'HIGH', count: 12 },
+    { id: 'DP-T001', severity: 'LOW', count: 5, newCount: 5 },
+  ]);
+  assert.strictEqual(s.blockingViolations, 35);          // 20 + 3 + 12 (기존 의미 유지)
+  assert.strictEqual(s.blockingNewViolations, 17);       // 2 + 3 + 12 (baseline 동결분 제외)
+  assert.strictEqual(s.actionable.CRITICAL, 5);
+  assert.strictEqual(s.actionable.HIGH, 12);
+  assert.strictEqual(s.totalActionableViolations, 22);   // 17 + LOW 5
+});
+
+test('summarizeSeverity: baseline 부채만 있는 브라운필드는 Pivot 임계(5)에 걸리지 않는다', () => {
+  const s = C.summarizeSeverity([{ id: 'DP-T002', severity: 'CRITICAL', count: 40, newCount: 1 }]);
+  assert.ok(s.blockingViolations >= 5);          // 예전 기준이면 즉시 Pivot 권고였다
+  assert.strictEqual(s.blockingNewViolations, 1);
+  assert.ok(s.blockingNewViolations < 5);
+});
+
+test('summarizeSeverity: 빈 입력도 0으로 안전하게 요약한다', () => {
+  const s = C.summarizeSeverity([]);
+  assert.strictEqual(s.blockingViolations, 0);
+  assert.strictEqual(s.blockingNewViolations, 0);
+  assert.strictEqual(s.totalActionableViolations, 0);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -20,6 +20,11 @@ const {
   readHealthHistory,
   sanitizeRouteName,
   readPreviousScore,
+  scoreTokenDriftPenalty,
+  classifyProbes,
+  summarizeCaptureResults,
+  probeTimeout,
+  PROBE_TIMEOUT_MAX,
 } = require('../scripts/capture.cjs');
 
 let passed = 0;
@@ -392,6 +397,170 @@ test('buildHealthScore: stagnation/ruleFailureSummary/baseline을 스크립트�
 test('buildHealthScore: 순수 함수 - 같은 입력이면 같은 출력(시계 주입)', () => {
   const args = [HS, {}, { mode: 'full' }, { previousScore: 70, timestamp: 'T' }];
   assert.deepStrictEqual(buildHealthScore(...args), buildHealthScore(...args));
+});
+
+
+// ── classifyProbes (v2.7.0) ──
+test('classifyProbes: 2xx가 하나라도 있으면 reachable, 4xx는 skipped', () => {
+  const r = classifyProbes([
+    { route: '/', ok: true, status: 200 },
+    { route: '/admin', ok: false, status: 404 },
+  ]);
+  assert.strictEqual(r.status, 'reachable');
+  assert.strictEqual(r.down, false);
+  assert.deepStrictEqual(r.reachable, ['/']);
+  assert.strictEqual(r.skipped.length, 1);
+  assert.strictEqual(r.skipped[0].route, '/admin');
+  assert.strictEqual(r.attempt.length, 0);
+});
+
+test('classifyProbes: 전부 TIMEOUT은 down이 아니라 unreachable(timeout) — 캡처를 시도한다', () => {
+  const r = classifyProbes([
+    { route: '/', error: 'TIMEOUT' },
+    { route: '/about', error: 'TIMEOUT' },
+  ]);
+  assert.strictEqual(r.status, 'unreachable(timeout)');
+  assert.strictEqual(r.down, false);            // 느린 서버를 "죽었다"로 단정하지 않는다
+  assert.strictEqual(r.downReason, null);
+  assert.deepStrictEqual(r.attempt.map(a => a.route), ['/', '/about']);
+  assert.strictEqual(r.skipped.length, 0);
+});
+
+test('classifyProbes: 응답 0건 + ECONNREFUSED 1건 이상이면 down', () => {
+  const r = classifyProbes([
+    { route: '/', error: 'ECONNREFUSED' },
+    { route: '/x', error: 'TIMEOUT' },
+  ]);
+  assert.strictEqual(r.status, 'down');
+  assert.strictEqual(r.down, true);
+  assert.strictEqual(r.downReason, 'ECONNREFUSED');
+});
+
+test('classifyProbes: 알 수 없는 연결 오류는 skipped가 아니라 attempt', () => {
+  const r = classifyProbes([{ route: '/', error: 'ENOTFOUND' }]);
+  assert.strictEqual(r.status, 'unreachable');
+  assert.strictEqual(r.down, false);
+  assert.strictEqual(r.attempt.length, 1);
+  assert.ok(r.attempt[0].reason.includes('ENOTFOUND'));
+});
+
+test('classifyProbes: 빈 입력/비배열도 죽지 않는다', () => {
+  for (const input of [[], null, undefined, 'x']) {
+    const r = classifyProbes(input);
+    assert.strictEqual(r.status, 'unknown');
+    assert.strictEqual(r.down, false);
+  }
+});
+
+test('classifyProbes: 순수 함수 — 같은 입력이면 같은 출력', () => {
+  const input = [{ route: '/', ok: true, status: 200 }, { route: '/a', error: 'TIMEOUT' }];
+  assert.deepStrictEqual(classifyProbes(input), classifyProbes(input));
+});
+
+// ── probeTimeout (v2.7.0) ──
+test('probeTimeout: TIMEOUT 설정에서 파생되며 상한(15s)을 넘지 않는다', () => {
+  const t = probeTimeout();
+  assert.ok(Number.isFinite(t));
+  assert.ok(t >= 1 && t <= PROBE_TIMEOUT_MAX);
+});
+
+// ── summarizeCaptureResults (v2.7.0) ──
+test('summarizeCaptureResults: skipped 라우트는 실패로 세지 않는다 (404 하나가 exit 1을 만들던 버그)', () => {
+  const s = summarizeCaptureResults([
+    { route: '/admin', success: false, skipped: { reason: 'HTTP 404', status: 404 } },
+    { route: '/', success: true },
+  ]);
+  assert.strictEqual(s.total, 2);
+  assert.strictEqual(s.attempted, 1);
+  assert.strictEqual(s.skipped, 1);
+  assert.strictEqual(s.failed, 0);
+  assert.strictEqual(s.success, true);
+});
+
+test('summarizeCaptureResults: 시도한 것이 실패하면 success=false', () => {
+  const s = summarizeCaptureResults([
+    { route: '/', success: false },
+    { route: '/a', success: true },
+  ]);
+  assert.strictEqual(s.failed, 1);
+  assert.strictEqual(s.success, false);
+});
+
+test('summarizeCaptureResults: 시도한 라우트가 0건이면 success=false (아무것도 안 한 실행을 성공이라 하지 않는다)', () => {
+  const s = summarizeCaptureResults([
+    { route: '/a', success: false, skipped: { reason: 'HTTP 404', status: 404 } },
+  ]);
+  assert.strictEqual(s.attempted, 0);
+  assert.strictEqual(s.success, false);
+});
+
+test('summarizeCaptureResults: 빈/비배열/null 항목 안전', () => {
+  assert.strictEqual(summarizeCaptureResults([]).success, false);
+  assert.strictEqual(summarizeCaptureResults(null).total, 0);
+  assert.strictEqual(summarizeCaptureResults([null, undefined, { success: true }]).attempted, 1);
+});
+
+// ── classifyStagnation: runs vs window (v2.7.0) ──
+test('classifyStagnation: runs는 실제 회차 수, window는 판정에 쓴 창 크기', () => {
+  const r = classifyStagnation([75, 74, 76, 70, 60]);
+  assert.strictEqual(r.runs, 5);       // 넘어온 회차 전부
+  assert.strictEqual(r.window, 3);     // 판정에 쓴 최근 3개
+  assert.deepStrictEqual(r.scores, [75, 74, 76]);
+  assert.strictEqual(r.status, 'stagnant');
+});
+
+test('classifyStagnation: insufficient일 때 window=0, runs=실제 회차 수', () => {
+  const r = classifyStagnation([80, 79]);
+  assert.strictEqual(r.status, 'insufficient');
+  assert.strictEqual(r.runs, 2);
+  assert.strictEqual(r.window, 0);
+  assert.strictEqual(r.required, 3);
+});
+
+test('classifyStagnation: delta는 최신 − 가장 오래된 — 하락이면 음수', () => {
+  assert.strictEqual(classifyStagnation([74, 75, 76]).delta, -2);
+  assert.strictEqual(classifyStagnation([76, 75, 74]).delta, 2);
+});
+
+// ── scoreTokenDriftPenalty: 상한 경계 (v2.7.0) ──
+test('scoreTokenDriftPenalty: 신규 위반 상한 -12 경계 (6건=12는 미절단, 7건=14→12 절단)', () => {
+  const at = scoreTokenDriftPenalty({ color: { violationCount: 6, newViolationCount: 6 } });
+  assert.strictEqual(at.newPenalty, 12);
+  assert.strictEqual(at.rawNewPenalty, 12);
+  assert.strictEqual(at.newCapped, false);
+  const over = scoreTokenDriftPenalty({ color: { violationCount: 7, newViolationCount: 7 } });
+  assert.strictEqual(over.newPenalty, 12);
+  assert.strictEqual(over.rawNewPenalty, 14);
+  assert.strictEqual(over.newCapped, true);
+});
+
+test('scoreTokenDriftPenalty: baseline 잔여 상한 -3 경계 (30건=3 미절단, 300건도 3)', () => {
+  const at = scoreTokenDriftPenalty({ color: { violationCount: 30, newViolationCount: 0 } });
+  assert.strictEqual(at.baselinePenalty, 3);
+  assert.strictEqual(at.baselineCapped, false);
+  const over = scoreTokenDriftPenalty({ color: { violationCount: 300, newViolationCount: 0 } });
+  assert.strictEqual(over.baselinePenalty, 3);
+  assert.strictEqual(over.baselineCapped, true);
+  assert.strictEqual(over.penalty, 3);            // 기존 부채만으로 styleFit이 0이 되지 않는다
+});
+
+test('scoreTokenDriftPenalty: 두 상한이 동시에 걸려도 합계는 STYLE_FIT_MAX(15)를 넘지 않는다', () => {
+  const r = scoreTokenDriftPenalty({
+    color: { violationCount: 100, newViolationCount: 50 },
+    spacing: { violationCount: 100, newViolationCount: 50 },
+  });
+  assert.strictEqual(r.newPenalty, 12);
+  assert.strictEqual(r.baselinePenalty, 3);
+  assert.strictEqual(r.penalty, 15);
+});
+
+test('scoreTokenDriftPenalty: 상한 미만은 그대로 통과 + 카테고리별 내역 분리', () => {
+  const r = scoreTokenDriftPenalty({ color: { violationCount: 5, newViolationCount: 2 } });
+  assert.strictEqual(r.detail.color.newViolations, 2);
+  assert.strictEqual(r.detail.color.baselineViolations, 3);
+  assert.strictEqual(r.newPenalty, 4);
+  assert.strictEqual(r.baselinePenalty, 0.3);
+  assert.strictEqual(r.penalty, 4.3);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

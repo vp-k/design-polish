@@ -2,7 +2,7 @@
 name: design-renewal
 description: 디자인 전면 리뉴얼. 디자인 시스템 교체 수준의 대규모 변경. 색상 팔레트/타이포그래피/컴포넌트/레이아웃 전면 교체. 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.6.0"
+version: "2.7.0"
 ---
 
 # 디자인 리뉴얼 스킬
@@ -12,7 +12,9 @@ design-polish와 동일한 0~6단계 분석 인프라를 사용하되, 7단계 �
 
 ### 지식 기반 리소스
 - **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙 (마크다운 직접 Read)
-- **data/**: 66개 디자인 스타일, 96개 색상 팔레트, 57개 타이포그래피, 13개 기술 스택 가이드 (JSON + BM25 검색)
+- **data/**: 디자인 스타일 / 색상 팔레트 / 타이포그래피 / 기술 스택 가이드 (JSON + BM25 검색).
+  수록 건수는 데이터 파일이 단일 출처이므로 문서에 적지 않는다 —
+  실제 값이 필요하면 `node ${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs --help`가 `data/*.json`에서 세어 출력한다.
 - **scripts/search.cjs**: Node.js BM25 검색 엔진
 
 ## 인수

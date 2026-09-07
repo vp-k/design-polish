@@ -1,4 +1,4 @@
-# design-polish v2.6
+# design-polish v2.7
 
 Claude Code plugin for design intelligence-driven polishing.
 Combines built-in design knowledge base + visual comparison + WCAG accessibility checks + trend search.
@@ -16,6 +16,30 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 - **9-Level Priority System** — P0 (new contract violations) to P8 (LOW) improvements
 - **Auto-Apply** — Code improvements with `--apply`, gated behind a mandatory backup (fail-closed)
 - **Screenshot to Code** — `/design-from-screenshot` turns an image into framework code, constrained by the design contract when one exists
+
+### Honest failure signals (v2.7.0)
+
+- **The ratchet now reaches Pivot** — `ruleFailureSummary.blockingNewViolations` (token rules contribute
+  `newCount`, every other rule its full `count`) is what the Pivot threshold reads. `blockingViolations`
+  counted baseline-frozen debt, so a brownfield project with one new violation was told to renew everything
+  the moment it adopted a contract. The old field is kept for reporting.
+- **`:focus-visible` is matched per element** — `DP-S002` used to be demoted whenever the page contained any
+  `:focus-visible` rule anywhere, which made the rule unreachable on every real stylesheet. The audit now
+  collects the base selectors of `:focus-visible` rules and checks whether *this* element matches one.
+- **Unreadable stylesheets are not a pass** — cross-origin sheets that `document.styleSheets` cannot read are
+  counted (`stylesheetsUnreadable`) and demote the finding to INFO, instead of being silently treated as
+  "no `:focus-visible` rule exists" and reported as a CRITICAL.
+- **All-timeout is not "server down"** — a probe where every route times out is `unreachable(timeout)`, not
+  `down`; the routes are captured anyway and fail individually if they really are broken. Only a refused
+  connection means down. The probe timeout is derived from `TIMEOUT` (capped at 15s) instead of a fixed 5s,
+  so a slow dev server no longer aborts the run before it has started.
+- **Skipped routes do not fail the run** — routes the probe filtered out (404/5xx) are marked `skipped` and
+  excluded from the success verdict. One 404 route used to make an otherwise fully successful capture exit 1.
+  See "Exit codes" below.
+- **`stagnation.runs` means one thing** — it is always the number of same-tag runs actually supplied; the
+  window size used for the verdict is reported separately as `window`.
+- **Decision functions are exported and unit-tested** — `classifyProbes`, `summarizeCaptureResults`,
+  `classifyStagnation`, `focusDemotion`, `actionableCount` and the penalty caps are pure functions with tests.
 
 ### Measurement honesty (v2.6.0)
 
@@ -288,6 +312,19 @@ in the baseline and never reach P0.
     ├── touch-targets.json       # undersized interactive elements
     └── console-errors.json
 ```
+
+## Exit codes
+
+`scripts/capture.cjs` exits with:
+
+| Code | Meaning |
+|------|---------|
+| 0 | Every route that was **attempted** succeeded. Routes the probe skipped (4xx/5xx, refused) are reported in `resultSummary.skipped` and do not fail the run |
+| 1 | Something that was attempted failed — a capture/WCAG error, or `SERVER_DOWN` (every probe refused the connection) |
+| 2 | `NO_REACHABLE_ROUTE` — the server answered but none of the requested routes could be attempted |
+
+`resultSummary` (`{ total, attempted, skipped, failed, success }`) accompanies the JSON result so a caller
+can tell "nothing was attempted" from "everything attempted passed".
 
 ## Environment Variables
 

@@ -7,7 +7,8 @@ argument-hint: <image-path> [--framework react|flutter|vue|svelte|html] [--style
 
 스크린샷이나 디자인 이미지를 분석하여 프레임워크별 UI 코드를 생성합니다.
 Claude 비전으로 디자인 속성(레이아웃, 색상, 타이포, 컴포넌트)을 추출하고,
-디자인 지식 DB(67개 스타일, 96개 팔레트, 57개 타이포그래피)로 보강하여 정확한 코드를 생성합니다.
+디자인 지식 DB(스타일 / 팔레트 / 타이포그래피 — 수록 건수는
+`node ${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs --help`가 데이터 파일에서 세어 출력)로 보강하여 정확한 코드를 생성합니다.
 
 ## 옵션
 

@@ -45,7 +45,7 @@ STASH=$(git stash create "${BACKUP_LABEL} pre-apply snapshot")
 
 > **`git stash create`는 추적(tracked) 파일만 담는다** — untracked/ignored 원본은 포함되지 않고,
 > 커밋 오브젝트는 참조가 없으면 GC 대상이다(그래서 `git stash store`로 고정한다).
-> 따라서 **변경 예정 파일 중 untracked인 원본이 있으면** 4)의 파일 복사 백업을 **반드시 병행**한다.
+> 따라서 **변경 예정 파일 중 untracked인 원본이 있으면** §3의 파일 복사 백업을 **반드시 병행**한다.
 
 ```bash
 # 3) 백업 브랜치 — 기존 백업을 파괴하지 않도록 -f 금지. 존재하면 타임스탬프 접미사로 신규 생성
@@ -68,9 +68,22 @@ fi
 
 적용을 시작하기 전에 다음 중 **최소 하나**가 실제로 존재하는지 확인한다.
 
+백업 브랜치 존재 확인은 반드시 아래 명령을 쓴다:
+
+```bash
+# 백업 브랜치가 하나라도 있는가 (타임스탬프 접미사 포함) — 출력이 있으면 확보된 것
+git for-each-ref --format='%(refname:short)' "refs/heads/${BACKUP_LABEL}-backup*"
+```
+
+> **`git show-ref --verify`에 글롭을 주지 않는다.** `--verify`는 인자를 **정확한 ref 이름**으로만
+> 취급하므로 `refs/heads/<label>-backup*`은 항상 exit 1이다. 즉 백업 브랜치가 실제로 있어도
+> "확보 실패"로 읽혀 fail-closed 원칙에 따라 `--apply`가 통째로 막힌다(백업이 정상인데 차단).
+> 정확한 이름 하나만 볼 때는 `git show-ref --verify --quiet "refs/heads/${BACKUP_LABEL}-backup"`
+> (§2의 3번 블록처럼 글롭 없이), 접미사까지 포함해 볼 때는 `git for-each-ref` 출력 유무로 판정한다.
+
 | 상황 | 확보되어야 할 것 | 확인 |
 |------|------------------|------|
-| git + 작업트리 깨끗 | 백업 브랜치 | `git show-ref --verify --quiet refs/heads/<label>-backup*` |
+| git + 작업트리 깨끗 | 백업 브랜치 | 위 `git for-each-ref ...` 출력이 1줄 이상 |
 | git + 미커밋(추적) 변경 | 백업 브랜치 **AND** stash 항목 | 위 + `git stash list \| grep "<label> pre-apply"` |
 | untracked 원본 포함 | 위 + 파일 복사 백업 디렉토리 | 디렉토리 존재 + 파일 수 > 0 |
 | git 아님 | 파일 복사 백업 디렉토리 | 디렉토리 존재 + 파일 수 > 0 |

@@ -1,7 +1,7 @@
 {
   "name": "design-polish",
-  "version": "2.6.0",
-  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification (renewal auto-captures pre-apply baseline), route auto-discovery. v2.5.0: design contract (DESIGN.md + design-decisions.json) with ratcheted token-drift lint, Korean typography rules, component state contract, numbered rule IDs. v2.6.0: keyboard-measured focus audit, contract-hashed token baseline, split penalty caps, 4-level severity, script-computed stagnation/severity rollup, shared fail-closed backup procedure, Unicode-aware BM25 search.",
+  "version": "2.7.0",
+  "description": "Design reference-based polishing with WCAG accessibility checks. Measurement engine (real styleFit/performance), mobile a11y + touch targets, close-the-loop verification (renewal auto-captures pre-apply baseline), route auto-discovery. v2.5.0: design contract (DESIGN.md + design-decisions.json) with ratcheted token-drift lint, Korean typography rules, component state contract, numbered rule IDs. v2.6.0: keyboard-measured focus audit, contract-hashed token baseline, split penalty caps, 4-level severity, script-computed stagnation/severity rollup, shared fail-closed backup procedure, Unicode-aware BM25 search. v2.7.0: Pivot keys off blockingNewViolations (baseline-frozen debt no longer forces a renewal), per-element :focus-visible matching with unreadable-stylesheet honesty, all-timeout probes are not SERVER_DOWN, TIMEOUT-derived probe timeout, probe-skipped routes no longer fail the run (documented exit codes), stagnation.runs/window disambiguated, exported pure decision functions with 150 unit tests.",
   "author": {
     "name": "user01"
   },
