@@ -14,6 +14,10 @@ const {
   calculateDesignHealthScore,
   dedupeErrors,
   classifyRegression,
+  classifyStagnation,
+  buildHealthScore,
+  viewportTag,
+  readHealthHistory,
   sanitizeRouteName,
   readPreviousScore,
 } = require('../scripts/capture.cjs');
@@ -255,6 +259,139 @@ test('sanitize: 루트는 main, 특수문자는 치환', () => {
   assert.strictEqual(sanitizeRouteName('/'), 'main');
   assert.strictEqual(sanitizeRouteName('/about'), 'about');
   assert.strictEqual(sanitizeRouteName('/blog/../etc'), 'blog----etc');
+});
+
+// == viewportTag / readHealthHistory (M11: 뷰포트 집합이 다른 회차를 baseline으로 잡지 않는다) ==
+test('viewportTag: 이름 집합을 정렬·중복 제거해 하나의 문자열로 만든다', () => {
+  assert.strictEqual(viewportTag([{ name: 'mobile' }, { name: 'desktop' }]), 'desktop,mobile');
+  assert.strictEqual(viewportTag([{ name: 'desktop' }, { name: 'mobile' }]), 'desktop,mobile');
+  assert.strictEqual(viewportTag(['desktop']), 'desktop');
+  assert.strictEqual(viewportTag([]), null);
+  assert.strictEqual(viewportTag(null), null);
+});
+
+test('readHealthHistory: 뷰포트 집합이 다른 회차는 baseline에서 제외', () => {
+  withHistory([
+    JSON.stringify({ score: 90, mode: 'full', route: '/', styleMode: 'contract', viewports: 'desktop' }),
+    JSON.stringify({ score: 60, mode: 'full', route: '/', styleMode: 'contract', viewports: 'desktop,mobile' }),
+  ], () => {
+    const rows = readHealthHistory({ mode: 'full', route: '/', styleMode: 'contract', viewports: 'desktop' }, 3);
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].score, 90);
+  });
+});
+
+test('readHealthHistory: viewports가 없는 구(舊) 라인은 하위호환으로 살린다', () => {
+  withHistory([
+    JSON.stringify({ score: 71, mode: 'full', route: '/', styleMode: 'contract' }),
+  ], () => {
+    const rows = readHealthHistory({ mode: 'full', route: '/', styleMode: 'contract', viewports: 'desktop,mobile' }, 3);
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].score, 71);
+  });
+});
+
+test('readHealthHistory: 최신순으로 최대 limit개만 반환하고 손상 라인은 건너뛴다', () => {
+  withHistory([
+    JSON.stringify({ score: 50, mode: 'full', route: '/' }),
+    '{ broken line',
+    JSON.stringify({ score: 60, mode: 'full', route: '/' }),
+    JSON.stringify({ score: 70, mode: 'full', route: '/' }),
+  ], () => {
+    const rows = readHealthHistory({ mode: 'full', route: '/' }, 2);
+    assert.deepStrictEqual(rows.map(r => r.score), [70, 60]);
+  });
+});
+
+// == classifyStagnation (M1: 정체 판정은 스크립트가 한다) ==
+test('classifyStagnation: 3회 미만이면 insufficient (모델이 추측하지 않게)', () => {
+  const r = classifyStagnation([70, 71]);
+  assert.strictEqual(r.status, 'insufficient');
+  assert.strictEqual(r.runs, 2);
+  assert.strictEqual(r.required, 3);
+  assert.strictEqual(r.delta, null);
+});
+
+test('classifyStagnation: dead-band(3점) 안에서 맴돌면 stagnant', () => {
+  const r = classifyStagnation([72, 70, 71]);
+  assert.strictEqual(r.status, 'stagnant');
+  assert.strictEqual(r.spread, 2);
+  assert.strictEqual(r.delta, 1);
+});
+
+test('classifyStagnation: 밴드를 벗어나 움직이면 none', () => {
+  assert.strictEqual(classifyStagnation([85, 70, 68]).status, 'none');
+  assert.strictEqual(classifyStagnation([60, 70, 75]).status, 'none');
+});
+
+test('classifyStagnation: 최신 3회만 보고 그 이전 회차는 무시', () => {
+  const r = classifyStagnation([70, 71, 72, 10, 5]);
+  assert.strictEqual(r.status, 'stagnant');
+  assert.deepStrictEqual(r.scores, [70, 71, 72]);
+});
+
+test('classifyStagnation: 비수치(NaN/null)는 걸러낸다', () => {
+  const r = classifyStagnation([70, null, NaN, 71]);
+  assert.strictEqual(r.status, 'insufficient');
+  assert.strictEqual(r.runs, 2);
+});
+
+// == buildHealthScore (M9: 게이트가 읽는 필드 계약을 고정한다) ==
+// auto-complete-loop/scripts/gates/design.sh가 읽는 필드 이름·의미가 바뀌면 조용히
+// 게이트가 무력화된다. 이 테스트가 그 계약의 유일한 자동 감시자다.
+const HS = { score: 74, breakdown: { wcagCritical: 30, wcagSerious: 20, consoleErrors: 20, styleFit: 12, performance: 12 } };
+
+test('buildHealthScore: design.sh가 읽는 필드가 모두 존재하고 타입이 맞다', () => {
+  const r = buildHealthScore(
+    HS,
+    { tokenDrift: { enabled: true, totalViolations: 9, newViolationCount: 2 }, ruleFailures: [] },
+    { mode: 'full', route: '/', styleMode: 'contract', viewports: 'desktop,mobile' },
+    { previousScore: 80, recentScores: [80, 79], timestamp: 'T' }
+  );
+  assert.strictEqual(typeof r.score, 'number');
+  assert.strictEqual(r.styleMode, 'contract');
+  assert.strictEqual(typeof r.regression.diff, 'number');
+  assert.strictEqual(r.regression.diff, -6);
+  assert.strictEqual(r.regression.status, 'regression');
+  assert.strictEqual(r.tokenDrift.enabled, true);
+  assert.strictEqual(r.tokenDrift.totalViolations, 9);
+  assert.strictEqual(r.tokenDrift.newViolationCount, 2);
+});
+
+test('buildHealthScore: baseline 없으면 regression은 null (게이트가 skip 판정)', () => {
+  const r = buildHealthScore(HS, {}, { mode: 'full', route: '/' }, { previousScore: null, timestamp: 'T' });
+  assert.strictEqual(r.regression, null);
+  assert.strictEqual(r.styleMode, 'heuristic');
+});
+
+test('buildHealthScore: dead-band 안의 하락은 unchanged로 흡수', () => {
+  const r = buildHealthScore(HS, {}, {}, { previousScore: 76, timestamp: 'T' });
+  assert.strictEqual(r.regression.diff, -2);
+  assert.strictEqual(r.regression.status, 'unchanged');
+  assert.strictEqual(r.regression.tolerance, 3);
+});
+
+test('buildHealthScore: stagnation/ruleFailureSummary/baseline을 스크립트가 계산해 싣는다', () => {
+  const r = buildHealthScore(
+    HS,
+    { ruleFailures: [
+      { rule: 'DP-T004', severity: 'CRITICAL', count: 3 },
+      { rule: 'DP-T001', severity: 'MEDIUM', count: 5 },
+    ] },
+    { mode: 'full', route: '/' },
+    { previousScore: 74, recentScores: [74, 73], baseline: { status: 'reused' }, timestamp: 'T' }
+  );
+  assert.strictEqual(r.stagnation.status, 'stagnant');
+  assert.strictEqual(r.stagnation.runs, 3);
+  assert.strictEqual(r.ruleFailureSummary.blockingRules, 1);
+  assert.strictEqual(r.ruleFailureSummary.blockingViolations, 3);
+  assert.strictEqual(r.ruleFailureSummary.totalViolations, 8);
+  assert.strictEqual(r.baseline.status, 'reused');
+});
+
+test('buildHealthScore: 순수 함수 - 같은 입력이면 같은 출력(시계 주입)', () => {
+  const args = [HS, {}, { mode: 'full' }, { previousScore: 70, timestamp: 'T' }];
+  assert.deepStrictEqual(buildHealthScore(...args), buildHealthScore(...args));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -12,17 +12,25 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // ============================================
 // 규칙 레지스트리 — knowledge/failure-rules.md와 1:1 대응
 // ============================================
 
+// severity는 CRITICAL > HIGH > MEDIUM > LOW 4단계뿐이다.
+// (v2.6.0 이전에는 MAJOR/MINOR가 더 있었고 MAJOR가 HIGH보다 낮게 정렬되어
+//  이름과 정렬 순서가 어긋났다. 이름이 곧 순서가 되도록 축소했다.)
+const SEVERITY_LEVELS = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const SEVERITY_ORDER = SEVERITY_LEVELS.reduce((acc, s, i) => { acc[s] = i; return acc; }, {});
+
+// 이 레지스트리가 규칙 severity의 단일 출처다. lint/집계/리포트는 여기서만 읽는다.
 const RULES = {
-  'DP-T001': { severity: 'MAJOR', title: 'border-radius가 디자인 계약 토큰 밖의 값' },
-  'DP-T002': { severity: 'MAJOR', title: '색상이 디자인 계약 팔레트 밖의 값' },
-  'DP-T003': { severity: 'MAJOR', title: 'spacing이 디자인 계약 스케일 밖의 값' },
+  'DP-T001': { severity: 'MEDIUM', title: 'border-radius가 디자인 계약 토큰 밖의 값' },
+  'DP-T002': { severity: 'MEDIUM', title: '색상이 디자인 계약 팔레트 밖의 값' },
+  'DP-T003': { severity: 'MEDIUM', title: 'spacing이 디자인 계약 스케일 밖의 값' },
   'DP-T004': { severity: 'HIGH', title: '폰트가 디자인 계약 타이포 밖의 값' },
-  'DP-T005': { severity: 'MINOR', title: 'box-shadow가 디자인 계약 스케일 밖의 값' },
+  'DP-T005': { severity: 'LOW', title: 'box-shadow가 디자인 계약 스케일 밖의 값' },
   'DP-K001': { severity: 'HIGH', title: '한글 텍스트에 serif fallback 폰트 스택' },
   'DP-K002': { severity: 'MEDIUM', title: '한글 문단에 word-break: keep-all 미설정' },
   'DP-K003': { severity: 'LOW', title: '한글 텍스트 자간(letter-spacing) 과다 축소' },
@@ -30,6 +38,17 @@ const RULES = {
   'DP-S002': { severity: 'CRITICAL', title: '인터랙티브 요소에 포커스 표시 없음 (WCAG 2.4.7)' },
   'DP-S003': { severity: 'MEDIUM', title: '클릭 가능 요소에 cursor: pointer 미설정' },
 };
+
+// 레지스트리 무결성 — 등록되지 않은 severity 문자열이 섞이면 정렬이 조용히 망가진다.
+for (const [id, r] of Object.entries(RULES)) {
+  if (SEVERITY_ORDER[r.severity] == null) {
+    throw new Error(`RULES[${id}]: unknown severity ${r.severity}`);
+  }
+}
+
+function ruleSeverity(id, fallback = 'MEDIUM') {
+  return (RULES[id] && RULES[id].severity) || fallback;
+}
 
 // 토큰 카테고리 → 규칙 ID
 const TOKEN_RULE = {
@@ -209,6 +228,26 @@ function readDesignContract(cwd = process.cwd()) {
 // ── ratchet baseline ──
 // 계약 도입 시점에 이미 존재하던 위반값 집합. 이후 실행은 "신규 위반"만 차단 대상으로 본다.
 // 파일을 지우면 다음 실행에서 현재 상태로 재-baseline 된다.
+// 계약의 "의미" 해시 — 파싱/정규화 후의 허용 토큰 집합만 본다.
+// 주석·들여쓰기·키 순서·표기(#FFF vs rgb(255,255,255))가 바뀌어도 해시는 그대로고,
+// 실제 허용값·rootPx가 바뀌면 해시가 달라진다. baseline 무효화 판정의 단일 기준.
+function hashContract(contract) {
+  if (!contract || !contract.enabled) return null;
+  const shape = {
+    rootPx: contract.rootPx,
+    tokens: {},
+  };
+  for (const cat of TOKEN_CATEGORIES) {
+    const spec = contract.tokens && contract.tokens[cat];
+    if (!spec) continue;
+    shape.tokens[cat] = {
+      decision: spec.decision || null,
+      allowed: Array.from(spec.allowed).sort(),
+    };
+  }
+  return crypto.createHash('sha256').update(JSON.stringify(shape)).digest('hex').slice(0, 16);
+}
+
 function readTokenBaseline(cwd = process.cwd()) {
   const fp = path.join(cwd, '.design-polish', 'token-baseline.json');
   try {
@@ -219,13 +258,50 @@ function readTokenBaseline(cwd = process.cwd()) {
     for (const cat of TOKEN_CATEGORIES) {
       out[cat] = new Set(Array.isArray(raw.values[cat]) ? raw.values[cat] : []);
     }
-    return { createdAt: raw.createdAt || null, values: out };
+    return {
+      createdAt: raw.createdAt || null,
+      contractHash: typeof raw.contractHash === 'string' ? raw.contractHash : null,
+      routes: Array.isArray(raw.routes) ? raw.routes.slice() : null,
+      values: out,
+    };
   } catch (_) {
     return null;
   }
 }
 
-function writeTokenBaseline(drift, cwd = process.cwd()) {
+// baseline이 "지금 이 계약"에 대해 아직 유효한지 판정한다.
+//   fresh                        — baseline 파일이 없다(최초 실행). 지금 상태를 동결한다.
+//   reused                       — 계약 해시가 일치. 기존 동결을 그대로 쓴다.
+//   refrozen(contract changed)   — 계약이 바뀌었다(해시 불일치). 해시가 없는 구버전 파일은 버리지 않고
+//                                  reused + needsRewrite로 채택한다(신규 부채 흡수 방지).
+//                                  옛 동결은 다른 계약 기준이라 신규 판정의 근거가 될 수 없으므로
+//                                  버리고 현재 위반을 새 baseline으로 재동결한다.
+// 반환: { status, stale, baseline, reason } — baseline은 재사용 가능할 때만 non-null.
+function resolveTokenBaseline(baseline, contract) {
+  const hash = hashContract(contract);
+  if (!baseline) {
+    return { status: 'fresh', stale: false, baseline: null, contractHash: hash, reason: 'no baseline file' };
+  }
+  if (!baseline.contractHash) {
+    // v2.5 이하 파일 — 어떤 계약으로 동결했는지 증명할 수 없지만, 그렇다고 버리고 현재 위반으로
+    // 재동결하면 업그레이드 시점까지 쌓인 신규 부채가 baseline으로 흡수된다(래칫 무력화).
+    // 동결값은 그대로 채택(reused)하고 호출자가 contractHash를 붙여 파일을 다시 쓰게 한다(needsRewrite).
+    // 계약이 실제로 바뀌었는지 의심되면 사람이 token-baseline.json을 삭제해 재동결한다.
+    return {
+      status: 'reused', stale: false, baseline, contractHash: hash, needsRewrite: true,
+      reason: 'legacy baseline adopted, contractHash recorded',
+    };
+  }
+  if (hash && baseline.contractHash !== hash) {
+    return {
+      status: 'refrozen(contract changed)', stale: true, baseline: null, contractHash: hash,
+      reason: `contract hash ${baseline.contractHash} -> ${hash}`,
+    };
+  }
+  return { status: 'reused', stale: false, baseline, contractHash: hash, reason: 'contract unchanged' };
+}
+
+function writeTokenBaseline(drift, cwd = process.cwd(), meta = {}) {
   if (!drift || !drift.enabled) return null;
   const dir = path.join(cwd, '.design-polish');
   fs.mkdirSync(dir, { recursive: true });
@@ -239,8 +315,36 @@ function writeTokenBaseline(drift, cwd = process.cwd()) {
   }
   const payload = {
     createdAt: new Date().toISOString(),
-    note: '계약 도입 시점의 기존 위반값 — 이후 실행은 신규 위반만 차단한다. 재-baseline하려면 이 파일을 삭제.',
+    note: '계약 도입 시점의 기존 위반값 — 이후 실행은 신규 위반만 차단한다. 계약(design-decisions.json)의 허용 토큰이 바뀌면 contractHash 불일치로 자동 재동결된다. 수동 재-baseline은 이 파일 삭제.',
+    // 어떤 계약을 기준으로 동결했는지. 이게 없거나 달라지면 이 동결은 무효다.
+    contractHash: meta.contractHash != null ? meta.contractHash : null,
+    // 어떤 라우트를 훑어 얻은 동결인지. 라우트가 늘면 새 값이 '신규'로 보일 수 있음을 사람이 판단할 근거.
+    routes: Array.isArray(meta.routes) ? meta.routes.slice() : [],
     values,
+  };
+  fs.writeFileSync(fp, JSON.stringify(payload, null, 2));
+  return fp;
+}
+
+// 이미 읽은 baseline(readTokenBaseline 결과)의 동결값을 그대로 두고 메타만 갱신해 다시 쓴다.
+// writeTokenBaseline은 '현재 drift'로 값을 만들지만, 이 함수는 값을 바꾸지 않는다 — 구버전 파일 채택 전용.
+function rewriteTokenBaselineMeta(baseline, cwd = process.cwd(), meta = {}) {
+  if (!baseline || !baseline.values) return null;
+  const dir = path.join(cwd, '.design-polish');
+  fs.mkdirSync(dir, { recursive: true });
+  const fp = path.join(dir, 'token-baseline.json');
+  const values = {};
+  for (const cat of TOKEN_CATEGORIES) {
+    const v = baseline.values[cat];
+    values[cat] = v instanceof Set ? Array.from(v) : (Array.isArray(v) ? v.slice() : []);
+  }
+  const payload = {
+    createdAt: baseline.createdAt || new Date().toISOString(),
+    note: '계약 도입 시점의 기존 위반값 — 이후 실행은 신규 위반만 차단한다. 계약(design-decisions.json)의 허용 토큰이 바뀌면 contractHash 불일치로 자동 재동결된다. 수동 재-baseline은 이 파일 삭제.',
+    contractHash: meta.contractHash != null ? meta.contractHash : null,
+    routes: Array.isArray(meta.routes) ? meta.routes.slice() : (Array.isArray(baseline.routes) ? baseline.routes.slice() : []),
+    values,
+    adoptedAt: new Date().toISOString(),
   };
   fs.writeFileSync(fp, JSON.stringify(payload, null, 2));
   return fp;
@@ -269,6 +373,11 @@ function lintTokenDrift(styleValues, contract, baseline, capped) {
   let totalViolations = 0;
   let newViolationCount = 0;
   const findings = [];
+  // 계약이 검사하는 범주 중 수집 상한(200종)에 걸린 것들 — 위반이 0건이어도 기록한다.
+  // "위반이 없다"와 "다 못 봤다"는 다른 사실이고, 후자를 점수로 환산하면 안 된다.
+  const cappedCategories = TOKEN_CATEGORIES.filter(
+    cat => contract.tokens[cat] && capped && capped[cat]
+  );
 
   for (const cat of TOKEN_CATEGORIES) {
     const spec = contract.tokens[cat];
@@ -313,7 +422,7 @@ function lintTokenDrift(styleValues, contract, baseline, capped) {
 
     findings.push({
       id: TOKEN_RULE[cat],
-      severity: newViolations.length > 0 ? 'CRITICAL' : RULES[TOKEN_RULE[cat]].severity,
+      severity: newViolations.length > 0 ? 'CRITICAL' : ruleSeverity(TOKEN_RULE[cat]),
       category: cat,
       count: violations.length,
       newCount: newViolations.length,
@@ -326,7 +435,10 @@ function lintTokenDrift(styleValues, contract, baseline, capped) {
   return {
     enabled: true,
     hasBaseline: !!baseline,
-    capped: Object.keys(categories).filter(c => categories[c].capped),
+    capped: cappedCategories,
+    // 계측 완전성. incomplete면 totalViolations/newViolationCount는 하한값일 뿐이므로
+    // 점수(styleFit)로 환산하지 않고 상태로만 보고한다. (게이트가 읽는 두 카운트 필드는 유지)
+    measurement: cappedCategories.length > 0 ? 'incomplete' : 'complete',
     totalViolations,
     newViolationCount,
     categories,
@@ -408,7 +520,7 @@ function lintKoreanTypography(metrics) {
     if (hits[id].length === 0) continue;
     findings.push({
       id,
-      severity: RULES[id].severity,
+      severity: ruleSeverity(id),
       title: RULES[id].title,
       count: hits[id].length,
       samples: hits[id].slice(0, 5),
@@ -428,17 +540,33 @@ function lintKoreanTypography(metrics) {
 // ============================================
 
 // metrics: {
-//   scannedInteractive, focusMeasured,
+//   scannedInteractive, focusMeasured, focusMethod, hasFocusVisibleRule,
+//   focusTraversalCapped, focusTimedOut, stylesheetsUnreadable,
 //   disabled:  [{ selector, cursor, opacity }],
 //   focusable: [{ selector, focusChanged }],
 //   clickable: [{ selector, tag, cursor }]
 // }
+//
+// DP-S002(포커스 표시 없음)의 판정 근거는 **실제 키보드 포커스**다(focusMethod: 'keyboard-tab').
+// el.focus()로는 :focus-visible이 적용되지 않아, :focus-visible만 스타일링한 정상 코드가
+// 통째로 위반으로 잡혔다(거짓 양성). Tab 순회로 진짜 키보드 포커스를 준 뒤 비교한다.
+//
+// 그럼에도 변화가 안 잡히는 경우가 남는다 — 포커스 표시가 ::after/::before 의사요소,
+// SVG filter, 상위 요소 스타일로 구현되면 대상 요소의 computed style은 그대로다.
+// 그래서 페이지 CSS에 :focus-visible 규칙이 **하나라도** 있으면(hasFocusVisibleRule)
+// 개별 '변화 없음'은 위반이 아니라 INFO로 강등한다(fail-open) — 저자가 명시적으로
+// 키보드 포커스를 스타일링했다는 증거가 있는데 계측 한계로 사람을 깨우지 않는다.
 function lintStateContract(metrics) {
   if (!metrics || typeof metrics !== 'object') {
     return { enabled: false, reason: 'no state contract measurement' };
   }
 
   const hits = { 'DP-S001': [], 'DP-S002': [], 'DP-S003': [] };
+  const info = [];
+  const focusMethod = metrics.focusMethod || 'unknown';
+  // 실제 키보드 포커스로 측정하지 못했으면 DP-S002를 단정하지 않는다.
+  const focusTrusted = focusMethod === 'keyboard-tab';
+  const demoteFocus = !focusTrusted || metrics.hasFocusVisibleRule === true;
 
   for (const d of (metrics.disabled || [])) {
     if (!d) continue;
@@ -449,8 +577,19 @@ function lintStateContract(metrics) {
 
   for (const f of (metrics.focusable || [])) {
     if (!f) continue;
-    if (f.focusChanged === false) {
-      hits['DP-S002'].push({ selector: f.selector, detail: 'focus 시 outline/box-shadow/border 변화 없음' });
+    if (f.focusChanged !== false) continue;
+    const detail = 'Tab 포커스 시 outline/box-shadow/border/background 변화 없음';
+    if (demoteFocus) {
+      info.push({
+        id: 'DP-S002',
+        selector: f.selector,
+        detail,
+        reason: !focusTrusted
+          ? `키보드 포커스 계측 실패(focusMethod: ${focusMethod}) — 단정 불가`
+          : ':focus-visible 규칙이 페이지에 존재 — 의사요소/상위 요소 구현 가능성',
+      });
+    } else {
+      hits['DP-S002'].push({ selector: f.selector, detail });
     }
   }
 
@@ -467,7 +606,7 @@ function lintStateContract(metrics) {
     if (hits[id].length === 0) continue;
     findings.push({
       id,
-      severity: RULES[id].severity,
+      severity: ruleSeverity(id),
       title: RULES[id].title,
       count: hits[id].length,
       samples: hits[id].slice(0, 5),
@@ -478,6 +617,12 @@ function lintStateContract(metrics) {
     enabled: true,
     scannedInteractive: metrics.scannedInteractive || 0,
     focusMeasured: metrics.focusMeasured || 0,
+    focusMethod,
+    hasFocusVisibleRule: metrics.hasFocusVisibleRule === true,
+    focusTraversalCapped: metrics.focusTraversalCapped === true,
+    focusTimedOut: metrics.focusTimedOut === true,
+    // 위반으로 세지 않되 사람이 볼 수 있게 남기는 관측치 (점수·게이트에 영향 없음)
+    info,
     findings,
   };
 }
@@ -485,8 +630,6 @@ function lintStateContract(metrics) {
 // ============================================
 // 집계 — 규칙 ID 단위 평면 리스트 (리포트/게이트 소비용)
 // ============================================
-
-const SEVERITY_ORDER = { CRITICAL: 0, HIGH: 1, MAJOR: 2, MEDIUM: 3, MINOR: 4, LOW: 5 };
 
 function summarizeRuleFailures(...lints) {
   const out = [];
@@ -504,16 +647,44 @@ function summarizeRuleFailures(...lints) {
     }
   }
   out.sort((a, b) => {
-    const sa = SEVERITY_ORDER[a.severity] != null ? SEVERITY_ORDER[a.severity] : 9;
-    const sb = SEVERITY_ORDER[b.severity] != null ? SEVERITY_ORDER[b.severity] : 9;
+    const sa = SEVERITY_ORDER[a.severity] != null ? SEVERITY_ORDER[a.severity] : SEVERITY_LEVELS.length;
+    const sb = SEVERITY_ORDER[b.severity] != null ? SEVERITY_ORDER[b.severity] : SEVERITY_LEVELS.length;
     if (sa !== sb) return sa - sb;
     return (b.count || 0) - (a.count || 0);
   });
   return out;
 }
 
+// summarizeRuleFailures 결과 → severity별 집계.
+// Pivot 판정처럼 "모델이 세던 산수"를 스크립트가 결정론적으로 내놓기 위한 순수 함수다.
+//   rules      : severity별 실패한 규칙 수(중복 없는 규칙 ID 기준)
+//   violations : severity별 위반 인스턴스 합계
+//   blockingViolations : CRITICAL + HIGH 위반 인스턴스 합계 (Pivot 기준값)
+function summarizeSeverity(ruleFailures) {
+  const rules = {};
+  const violations = {};
+  for (const lv of SEVERITY_LEVELS) { rules[lv] = 0; violations[lv] = 0; }
+  const list = Array.isArray(ruleFailures) ? ruleFailures : [];
+  for (const f of list) {
+    const lv = SEVERITY_ORDER[f && f.severity] != null ? f.severity : 'LOW';
+    rules[lv] += 1;
+    violations[lv] += Number.isFinite(f && f.count) ? f.count : 0;
+  }
+  return {
+    rules,
+    violations,
+    totalRules: list.length,
+    totalViolations: SEVERITY_LEVELS.reduce((a, lv) => a + violations[lv], 0),
+    blockingRules: rules.CRITICAL + rules.HIGH,
+    blockingViolations: violations.CRITICAL + violations.HIGH,
+  };
+}
+
 module.exports = {
   RULES,
+  SEVERITY_LEVELS,
+  SEVERITY_ORDER,
+  ruleSeverity,
   TOKEN_RULE,
   TOKEN_CATEGORIES,
   normalizeColorValue,
@@ -523,11 +694,15 @@ module.exports = {
   normalizeTokenValue,
   parseDesignContract,
   readDesignContract,
+  hashContract,
   readTokenBaseline,
+  resolveTokenBaseline,
   writeTokenBaseline,
+  rewriteTokenBaselineMeta,
   lintTokenDrift,
   isSerifFallbackStack,
   lintKoreanTypography,
   lintStateContract,
   summarizeRuleFailures,
+  summarizeSeverity,
 };

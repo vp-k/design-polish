@@ -42,6 +42,13 @@ function validatePathWithinDir(filepath, baseDir) {
 // 설정
 // ============================================
 
+// 환경변수 정수 파싱 — 0을 기본값으로 되돌리지 않는다.
+function intEnv(raw, fallback) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 const CONFIG = {
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
   outputDir: process.env.OUTPUT_DIR || path.join(process.cwd(), '.design-polish', 'screenshots'),
@@ -54,10 +61,12 @@ const CONFIG = {
     { name: 'desktop', width: 1280, height: 720 },
   ],
   mobileViewport: { width: 375, height: 812 },
-  waitTime: Math.max(0, parseInt(process.env.WAIT_TIME, 10) || 2000),
-  timeout: Math.max(1, parseInt(process.env.TIMEOUT, 10) || 30000),
-  retries: Math.max(0, parseInt(process.env.RETRIES, 10) || 2),
-  fullPage: process.env.FULL_PAGE === 'true' || false,
+  // `||`를 쓰면 WAIT_TIME=0 / RETRIES=0 같은 정당한 0이 falsy로 걸러져 기본값으로 되돌아간다.
+  // 숫자로 파싱된 값이 있으면 그 값을 쓰고, 파싱 실패(NaN)일 때만 기본값을 쓴다.
+  waitTime: Math.max(0, intEnv(process.env.WAIT_TIME, 2000)),
+  timeout: Math.max(1, intEnv(process.env.TIMEOUT, 30000)),
+  retries: Math.max(0, intEnv(process.env.RETRIES, 2)),
+  fullPage: process.env.FULL_PAGE === 'true',
 };
 
 // ============================================
@@ -73,6 +82,59 @@ const CONFIG = {
 //     소폭 감점, 그 이후 새로 생긴 값(newViolations)만 강하게 감점한다.
 //   - heuristic: 계약이 없으면 distinct 값 난립 개수로 감점(기존 동작, 하위호환).
 //
+// styleFit 만점.
+const STYLE_FIT_MAX = 15;
+
+// 계약 감점 정책 — 신규 위반과 baseline 잔여를 **각각** 상한으로 묶는다.
+//   기존에는 총합만 15로 잘려서, 신규 위반이 0건이어도 기존 부채 150건이면
+//   150*0.1 = 15점이 통째로 날아가 래칫(기존 부채는 동결) 취지가 무력화됐다.
+//   잔여는 최대 -3(부채가 아무리 많아도 "약간의 상수 압력"), 신규는 최대 -12.
+const CONTRACT_PENALTY = {
+  perNewViolation: 2,
+  perBaselineViolation: 0.1,
+  maxNew: 12,
+  maxBaseline: 3,
+};
+
+// 순수 함수 — drift.categories만 받아 감점을 계산한다(브라우저·파일 IO 없음).
+function scoreTokenDriftPenalty(categories, policy = CONTRACT_PENALTY) {
+  const detail = {};
+  let rawNew = 0;
+  let rawBaseline = 0;
+  for (const [cat, r] of Object.entries(categories || {})) {
+    const total = Math.max(0, r.violationCount || 0);
+    const nv = Math.max(0, r.newViolationCount || 0);
+    const baselineCount = Math.max(0, total - nv);
+    const np = nv * policy.perNewViolation;
+    const bp = baselineCount * policy.perBaselineViolation;
+    detail[cat] = {
+      rule: r.rule,
+      decision: r.decision,
+      violations: total,
+      newViolations: nv,
+      baselineViolations: baselineCount,
+      newPenalty: Math.round(np * 100) / 100,
+      baselinePenalty: Math.round(bp * 100) / 100,
+      penalty: Math.round((np + bp) * 100) / 100,
+    };
+    rawNew += np;
+    rawBaseline += bp;
+  }
+  const newPenalty = Math.min(policy.maxNew, rawNew);
+  const baselinePenalty = Math.min(policy.maxBaseline, rawBaseline);
+  const round = v => Math.round(v * 100) / 100;
+  return {
+    detail,
+    newPenalty: round(newPenalty),
+    baselinePenalty: round(baselinePenalty),
+    rawNewPenalty: round(rawNew),
+    rawBaselinePenalty: round(rawBaseline),
+    newCapped: rawNew > policy.maxNew,
+    baselineCapped: rawBaseline > policy.maxBaseline,
+    penalty: round(Math.min(STYLE_FIT_MAX, newPenalty + baselinePenalty)),
+  };
+}
+
 // 임계값은 휴리스틱이며 조정 가능 (tunable). sampled 부족 시 만점 방지.
 function scoreConsistency(m, drift) {
   const detail = {};
@@ -83,21 +145,8 @@ function scoreConsistency(m, drift) {
 
   // ── contract 모드 ──
   if (drift && drift.enabled) {
-    let cPenalty = 0;
-    for (const [cat, r] of Object.entries(drift.categories || {})) {
-      // 신규 위반은 건당 -2, baseline 잔존 위반은 건당 -0.1 (전면 리팩터 강요 방지)
-      const baselineCount = Math.max(0, (r.violationCount || 0) - (r.newViolationCount || 0));
-      const p = (r.newViolationCount || 0) * 2 + baselineCount * 0.1;
-      detail[cat] = {
-        rule: r.rule,
-        decision: r.decision,
-        violations: r.violationCount || 0,
-        newViolations: r.newViolationCount || 0,
-        penalty: Math.round(p * 100) / 100,
-      };
-      cPenalty += p;
-    }
-    const cScore = Math.max(0, Math.min(15, 15 - cPenalty));
+    const pen = scoreTokenDriftPenalty(drift.categories);
+    const cScore = Math.max(0, Math.min(STYLE_FIT_MAX, STYLE_FIT_MAX - pen.penalty));
     return {
       score: Math.round(cScore * 100) / 100,
       insufficient: false,
@@ -106,7 +155,10 @@ function scoreConsistency(m, drift) {
       hasBaseline: !!drift.hasBaseline,
       totalViolations: drift.totalViolations || 0,
       newViolationCount: drift.newViolationCount || 0,
-      detail,
+      // 계측이 값 상한(200종)에 걸렸으면 위반 수는 하한값일 뿐이다 — 점수를 완전 계측인 양 읽지 않도록 표시.
+      measurement: drift.measurement || 'complete',
+      penalty: pen,
+      detail: pen.detail,
     };
   }
 
@@ -123,7 +175,7 @@ function scoreConsistency(m, drift) {
   add('color', m.colorCount || 0, 24, 0.2);
   add('spacing', m.spacingCount || 0, 12, 0.3);
   add('shadow', m.shadowCount || 0, 6, 0.5);
-  const score = Math.max(0, Math.min(15, 15 - penalty));
+  const score = Math.max(0, Math.min(STYLE_FIT_MAX, STYLE_FIT_MAX - penalty));
   return { score: Math.round(score * 100) / 100, insufficient: false, sampled: m.sampled, mode: 'heuristic', detail };
 }
 
@@ -242,19 +294,54 @@ async function withRetry(fn, retries = CONFIG.retries) {
   }
 }
 
+// 서버/라우트 도달성 프로브.
+// 반환: { ok, status, error }  error는 'ECONNREFUSED' | 'TIMEOUT' | 'NETWORK' | null
 async function checkServer(url) {
   const http = url.startsWith('https') ? require('https') : require('http');
   return new Promise((resolve) => {
     const req = http.get(url, { timeout: 5000 }, (res) => {
+      res.resume(); // 소켓 반환 (본문은 필요 없음)
       const ok = res.statusCode >= 200 && res.statusCode < 400;
-      resolve({ ok, status: res.statusCode });
+      resolve({ ok, status: res.statusCode, error: null });
     });
-    req.on('error', () => resolve({ ok: false, status: 0 }));
+    req.on('error', (e) => {
+      const code = (e && e.code) || 'NETWORK';
+      resolve({ ok: false, status: 0, error: code });
+    });
     req.on('timeout', () => {
       req.destroy();
-      resolve({ ok: false, status: 0 });
+      resolve({ ok: false, status: 0, error: 'TIMEOUT' });
     });
   });
+}
+
+// 대상 라우트를 전부 프로브해 "서버가 안 떠 있다"와 "그 라우트가 404다"를 구분한다.
+// 루트(/)가 404인 SPA/서브패스 앱에서 전체 캡처가 통째로 중단되던 문제(총체적 abort)를 없앤다.
+//   down    : 모든 프로브가 연결 자체에 실패 → 서버 미기동. 이때만 즉시 중단한다.
+//   reachable / skipped : 라우트별 판정. 4xx/5xx 라우트는 사유를 남기고 건너뛴다.
+async function probeTargets(baseUrl, routes) {
+  const list = (Array.isArray(routes) && routes.length > 0) ? routes : ['/'];
+  const probes = [];
+  for (const route of list) {
+    const r = await checkServer(baseUrl + route);
+    probes.push({ route, status: r.status, ok: r.ok, error: r.error });
+    // 연결 거부는 라우트가 아니라 서버의 상태다. 첫 프로브가 ECONNREFUSED면 나머지 라우트도
+    // 같은 소켓에 같은 답을 받을 뿐이므로 라우트 수 × 5s를 기다리지 않고 즉시 down으로 단락한다.
+    // (TIMEOUT·ENOTFOUND 등은 라우트별로 다를 수 있으므로 계속 프로브한다.)
+    if (r.error === 'ECONNREFUSED') break;
+  }
+  const connectionFailed = probes.every(p => p.error !== null);
+  return {
+    down: connectionFailed,
+    downReason: connectionFailed ? (probes[0].error || 'NETWORK') : null,
+    probes,
+    reachable: probes.filter(p => p.ok).map(p => p.route),
+    skipped: probes.filter(p => !p.ok).map(p => ({
+      route: p.route,
+      reason: p.error ? `connection ${p.error}` : `HTTP ${p.status}`,
+      status: p.status,
+    })),
+  };
 }
 
 // ============================================
@@ -360,13 +447,32 @@ async function collectStyleMetrics(page) {
         if (r.width === 0 || r.height === 0) continue; // 숨김/미표시 제외
         const cs = getComputedStyle(el);
         sampled++;
+        // border-radius: 네 모서리가 다를 수 있으나 실무상 top-left가 대표값이다(성능 대비 정보량).
         const br = cs.borderTopLeftRadius;
         if (br && br !== '0px') bump('borderRadius', br, el);
         if (cs.fontFamily) bump('fontFamily', cs.fontFamily.split(',')[0].trim().toLowerCase().replace(/["']/g, ''), el);
+        // 색: 전경 / 배경 / 테두리. DP-T002가 'color/background/border'를 규정하므로 border-color도 실측한다.
+        // (테두리 폭이 0이면 border-color는 화면에 나타나지 않으므로 세지 않는다 — 거짓 위반 방지)
         if (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') bump('color', cs.color, el);
         if (cs.backgroundColor && cs.backgroundColor !== 'rgba(0, 0, 0, 0)') bump('color', cs.backgroundColor, el);
-        for (const p of [cs.paddingTop, cs.paddingLeft, cs.marginTop, cs.marginLeft, cs.rowGap, cs.columnGap]) {
-          if (p && p !== '0px' && p !== 'normal') bump('spacing', p, el);
+        const borderSides = [
+          [cs.borderTopWidth, cs.borderTopColor],
+          [cs.borderRightWidth, cs.borderRightColor],
+          [cs.borderBottomWidth, cs.borderBottomColor],
+          [cs.borderLeftWidth, cs.borderLeftColor],
+        ];
+        for (const [w, c] of borderSides) {
+          if (!w || w === '0px' || !c || c === 'rgba(0, 0, 0, 0)') continue;
+          bump('color', c, el);
+        }
+        // spacing: 네 방향 전부. right/bottom을 빼면 비대칭 여백(예: padding-right: 13px)이 통과했다.
+        // 값은 Map으로 dedupe되므로 200종 캡에 대한 압력은 '방향 수'가 아니라 '서로 다른 값의 수'에 비례한다.
+        for (const p of [
+          cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft,
+          cs.marginTop, cs.marginRight, cs.marginBottom, cs.marginLeft,
+          cs.rowGap, cs.columnGap,
+        ]) {
+          if (p && p !== '0px' && p !== 'normal' && p !== 'auto') bump('spacing', p, el);
         }
         if (cs.boxShadow && cs.boxShadow !== 'none') bump('shadow', cs.boxShadow, el);
       }
@@ -518,93 +624,191 @@ async function collectKoreanTypography(page) {
   }
 }
 
+// 포커스 가시성 계측 예산 — Tab 순회는 페이지 상태를 건드리므로 상한을 둔다.
+const FOCUS_TRAVERSAL_MAX = 30;   // 최대 Tab 횟수
+const FOCUS_TRAVERSAL_MS = 5000;  // 페이지당 시간 상한
+
+// page.evaluate 안에서 재사용하는 헬퍼(문자열로 주입 — evaluate는 Node 스코프를 못 본다).
+const FOCUS_HELPERS = `
+  const __sig = (cs) => [
+    cs.outlineStyle, cs.outlineWidth, cs.outlineColor, cs.outlineOffset,
+    cs.boxShadow, cs.borderColor, cs.borderWidth, cs.backgroundColor,
+    cs.color, cs.textDecorationLine, cs.filter,
+  ].join('|');
+  const __cssPath = (el) => {
+    if (!el || !el.tagName) return '';
+    const parts = [];
+    let node = el, depth = 0;
+    while (node && node.nodeType === 1 && depth < 4) {
+      let seg = node.tagName.toLowerCase();
+      if (node.id) { parts.unshift(seg + '#' + node.id); break; }
+      const cls = (typeof node.className === 'string' ? node.className : '')
+        .trim().split(/\\s+/).filter(Boolean).slice(0, 2);
+      if (cls.length) seg += '.' + cls.join('.');
+      parts.unshift(seg);
+      node = node.parentElement;
+      depth++;
+    }
+    return parts.join(' > ').slice(0, 120);
+  };
+`;
+
 // 컴포넌트 상태 계약 원자료 수집 (disabled 표현 / 포커스 가시성 / 클릭 어포던스).
-// 포커스 가시성은 실제로 focus()를 걸어 전/후 computed style을 비교한다 — 정적 분석으로는
-// :focus-visible 규칙 적용 여부를 알 수 없기 때문. 측정 후 blur로 원복한다.
+//
+// 포커스 가시성은 **실제 키보드 포커스**로 잰다. el.focus()로는 :focus-visible이 켜지지 않아
+// (브라우저는 스크립트 포커스를 "키보드 사용자"로 보지 않는다) :focus-visible만 스타일링한
+// 정상 코드가 통째로 DP-S002 위반으로 잡히는 거짓 양성이 났다. page.keyboard.press('Tab')
+// 순회로 진짜 키보드 포커스를 만들고 document.activeElement의 computed style을 비교한다.
 async function collectStateContract(page) {
   try {
-    return await page.evaluate(() => {
-      const cssPath = (el) => {
-        if (!el || !el.tagName) return '';
-        const parts = [];
-        let node = el, depth = 0;
-        while (node && node.nodeType === 1 && depth < 4) {
-          let seg = node.tagName.toLowerCase();
-          if (node.id) { parts.unshift(`${seg}#${node.id}`); break; }
-          const cls = (typeof node.className === 'string' ? node.className : '')
-            .trim().split(/\s+/).filter(Boolean).slice(0, 2);
-          if (cls.length) seg += '.' + cls.join('.');
-          parts.unshift(seg);
-          node = node.parentElement;
-          depth++;
-        }
-        return parts.join(' > ').slice(0, 120);
-      };
-
+    const base = await page.evaluate(new Function(`
+      ${FOCUS_HELPERS}
       const INTERACTIVE = 'a[href], button, input:not([type=hidden]), select, textarea, [role=button], [role=link], [tabindex]:not([tabindex="-1"])';
       const all = Array.from(document.querySelectorAll(INTERACTIVE))
         .filter(el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
 
       const disabled = [];
-      const focusable = [];
       const clickable = [];
-
-      const focusSignature = (cs) => [
-        cs.outlineStyle, cs.outlineWidth, cs.outlineColor, cs.outlineOffset,
-        cs.boxShadow, cs.borderColor, cs.borderWidth, cs.backgroundColor,
-      ].join('|');
-
-      const prevActive = document.activeElement;
-      let focusMeasured = 0;
-
       for (const el of all) {
         const cs = getComputedStyle(el);
         const isDisabled = el.disabled === true || el.getAttribute('aria-disabled') === 'true';
-
         if (isDisabled) {
           if (disabled.length < 30) {
-            disabled.push({ selector: cssPath(el), cursor: cs.cursor, opacity: cs.opacity });
+            disabled.push({ selector: __cssPath(el), cursor: cs.cursor, opacity: cs.opacity });
           }
           continue; // disabled 요소는 포커스/커서 검사 대상에서 제외
         }
-
-        // 포커스 가시성 — 상위 30개만 (focus() 비용/부작용 최소화)
-        if (focusable.length < 30) {
-          let changed = null;
-          try {
-            const before = focusSignature(cs);
-            el.focus({ preventScroll: true });
-            if (document.activeElement === el) {
-              const after = focusSignature(getComputedStyle(el));
-              changed = before !== after;
-              focusMeasured++;
-            }
-          } catch (_) { changed = null; }
-          if (changed !== null) focusable.push({ selector: cssPath(el), focusChanged: changed });
-        }
-
-        // 클릭 어포던스 — 네이티브 링크/버튼은 UA 기본값이 있으므로 제외하고
-        // role/tabindex로 만든 커스텀 클릭 요소만 검사
         const tag = el.tagName.toLowerCase();
         const isNative = tag === 'a' || tag === 'button' || tag === 'select' || tag === 'input' || tag === 'textarea';
         if (!isNative && clickable.length < 30) {
-          clickable.push({ selector: cssPath(el), tag, cursor: cs.cursor });
+          clickable.push({ selector: __cssPath(el), tag, cursor: cs.cursor });
         }
       }
 
-      try {
-        if (document.activeElement && document.activeElement !== prevActive && document.activeElement.blur) {
-          document.activeElement.blur();
+      // 페이지 CSS에 :focus-visible 규칙이 있는지 — 개별 '변화 없음'을 INFO로 강등할 근거.
+      // 교차 출처 스타일시트는 cssRules 접근이 막히므로 읽지 못한 사실을 따로 남긴다.
+      let hasFocusVisibleRule = false;
+      let stylesheetsUnreadable = 0;
+      const walk = (list) => {
+        for (const r of Array.from(list || [])) {
+          if (hasFocusVisibleRule) return;
+          if (typeof r.selectorText === 'string' && r.selectorText.indexOf(':focus-visible') !== -1) {
+            hasFocusVisibleRule = true; return;
+          }
+          if (r.cssRules) walk(r.cssRules); // @media / @supports 중첩
         }
-        if (prevActive && prevActive.focus) prevActive.focus({ preventScroll: true });
-      } catch (_) { /* 원복 실패는 계측 결과에 영향 없음 */ }
+      };
+      for (const sheet of Array.from(document.styleSheets || [])) {
+        let rules = null;
+        try { rules = sheet.cssRules; } catch (_) { stylesheetsUnreadable++; continue; }
+        if (!rules) { stylesheetsUnreadable++; continue; }
+        walk(rules);
+        if (hasFocusVisibleRule) break;
+      }
 
-      return { scannedInteractive: all.length, focusMeasured, disabled, focusable, clickable };
-    });
+      return { scannedInteractive: all.length, disabled, clickable, hasFocusVisibleRule, stylesheetsUnreadable };
+    `));
+
+    const focus = await collectFocusVisibility(page);
+    return { ...base, ...focus };
   } catch (error) {
     console.error(`State contract audit failed: ${error.message}`);
     return null;
   }
+}
+
+// Tab 순회로 실제 키보드 포커스를 만들며 포커스 표시 변화를 측정한다.
+//   1) body에 임시 tabindex를 주고 포커스 → 순회 시작점 고정
+//   2) Tab을 누를 때마다 document.activeElement에 표식(data-dp-focus-probe=i)을 달고
+//      포커스 상태 시그니처를 읽는다. 이미 표식이 있으면 한 바퀴 돈 것이므로 종료.
+//   3) 순회 후 blur하고 표식이 달린 요소의 비포커스 시그니처를 읽어 비교, 표식을 모두 제거.
+// 상한: Tab 최대 FOCUS_TRAVERSAL_MAX회, 페이지당 FOCUS_TRAVERSAL_MS 예산.
+async function collectFocusVisibility(page, max = FOCUS_TRAVERSAL_MAX, budgetMs = FOCUS_TRAVERSAL_MS) {
+  const deadline = Date.now() + budgetMs;
+  const unavailable = {
+    focusable: [], focusMeasured: 0, focusMethod: 'unavailable',
+    focusTraversalCapped: false, focusTimedOut: false,
+  };
+
+  try {
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-dp-focus-probe]').forEach(el => el.removeAttribute('data-dp-focus-probe'));
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (_) { /* noop */ }
+      if (document.body) {
+        document.body.setAttribute('data-dp-focus-origin', '1');
+        document.body.setAttribute('tabindex', '-1');
+        try { document.body.focus({ preventScroll: true }); } catch (_) { /* noop */ }
+      }
+    });
+  } catch (_) {
+    return unavailable;
+  }
+
+  const focused = [];   // [{ index, selector, sig }]
+  let capped = false;
+  let timedOut = false;
+
+  for (let i = 0; i < max; i++) {
+    if (Date.now() > deadline) { timedOut = true; break; }
+    try {
+      await page.keyboard.press('Tab');
+    } catch (_) {
+      break;
+    }
+    let step;
+    try {
+      step = await page.evaluate(new Function('idx', `
+        ${FOCUS_HELPERS}
+        const el = document.activeElement;
+        if (!el || el === document.body || el === document.documentElement) return { stop: true };
+        if (el.hasAttribute('data-dp-focus-probe')) return { stop: true, wrapped: true };
+        el.setAttribute('data-dp-focus-probe', String(idx));
+        return { stop: false, index: idx, selector: __cssPath(el), sig: __sig(getComputedStyle(el)) };
+      `), i);
+    } catch (_) {
+      break;
+    }
+    if (!step || step.stop) break;
+    focused.push(step);
+  }
+  if (focused.length >= max) capped = true;
+
+  // 포커스 해제 후 비포커스 시그니처를 읽어 비교하고, 표식/임시 tabindex를 원복한다.
+  let focusable = [];
+  let restored = false;
+  try {
+    focusable = await page.evaluate(new Function('entries', `
+      ${FOCUS_HELPERS}
+      try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (_) {}
+      const out = [];
+      for (const entry of entries) {
+        const el = document.querySelector('[data-dp-focus-probe="' + entry.index + '"]');
+        if (!el) continue;
+        out.push({ selector: entry.selector, focusChanged: __sig(getComputedStyle(el)) !== entry.sig });
+      }
+      document.querySelectorAll('[data-dp-focus-probe]').forEach(el => el.removeAttribute('data-dp-focus-probe'));
+      const origin = document.querySelector('[data-dp-focus-origin]');
+      if (origin) { origin.removeAttribute('tabindex'); origin.removeAttribute('data-dp-focus-origin'); }
+      return out;
+    `), focused);
+    restored = true;
+  } catch (_) {
+    focusable = [];
+  }
+
+  // Tab이 한 요소도 잡지 못했으면 "포커스 가능한 요소가 없다"와 "키보드 포커스를 못 걸었다"를
+  // 구분할 수 없다. 단정하지 않도록 focusMethod를 unavailable로 남겨 린트가 강등하게 한다.
+  if (!restored || focused.length === 0) {
+    return { ...unavailable, focusTraversalCapped: capped, focusTimedOut: timedOut };
+  }
+
+  return {
+    focusable,
+    focusMeasured: focusable.length,
+    focusMethod: 'keyboard-tab',
+    focusTraversalCapped: capped,
+    focusTimedOut: timedOut,
+  };
 }
 
 // ============================================
@@ -687,24 +891,75 @@ function saveConsoleErrors(consoleErrors, pageErrors) {
 // styleFit 산식 자체가 바뀌므로, 계약 이전(heuristic) 점수와 비교하면 코드가 하나도
 // 안 바뀌었는데 거짓 regression/improved가 뜬다. 이력에 styleMode가 없는 구(舊) 라인은
 // 'heuristic'으로 간주(하위호환).
-function readPreviousScore(mode, route, styleMode) {
+// 뷰포트 집합 태그 — 정렬된 이름 목록을 ','로 이어 붙인 문자열.
+// 뷰포트 수가 달라지면 콘솔 에러 수집량·모바일 a11y 패스 유무가 달라져 점수 상한이
+// 흔들린다. 다른 뷰포트 집합의 회차를 baseline으로 잡으면 거짓 회귀가 난다.
+function viewportTag(viewports) {
+  if (!Array.isArray(viewports) || viewports.length === 0) return null;
+  const names = viewports
+    .map(v => (typeof v === 'string' ? v : (v && v.name)))
+    .filter(Boolean)
+    .map(String);
+  if (names.length === 0) return null;
+  return Array.from(new Set(names)).sort().join(',');
+}
+
+// 이력에서 동종(mode/route/styleMode/viewports) 라인만 최신순으로 최대 limit개 읽는다.
+// 손상된 라인은 건너뛴다. viewports 필드가 없는 구(舊) 라인은 태그 불일치로 버리지 않는다
+// — v2.5 이하 이력이 통째로 무효화되면 도입 직후 회귀 판정이 사라지기 때문(하위호환).
+function readHealthHistory(tag = {}, limit = 1) {
   const fp = path.join(process.cwd(), '.design-polish', 'health-history.jsonl');
+  const out = [];
   try {
-    if (!fs.existsSync(fp)) return null;
+    if (!fs.existsSync(fp)) return out;
     const lines = fs.readFileSync(fp, 'utf-8').split('\n').filter(l => l.trim());
-    for (let i = lines.length - 1; i >= 0; i--) {
+    for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
       let entry;
       try { entry = JSON.parse(lines[i]); } catch (_) { continue; }
       if (typeof entry.score !== 'number') continue;
-      if (mode != null && entry.mode !== mode) continue;   // 동일 측정 모드만
-      if (route != null && entry.route !== route) continue; // 동일 라우트만
-      if (styleMode != null && (entry.styleMode || 'heuristic') !== styleMode) continue; // 동일 스코어링 산식만
-      return entry.score;
+      if (tag.mode != null && entry.mode !== tag.mode) continue;   // 동일 측정 모드만
+      if (tag.route != null && entry.route !== tag.route) continue; // 동일 라우트만
+      if (tag.styleMode != null && (entry.styleMode || 'heuristic') !== tag.styleMode) continue; // 동일 스코어링 산식만
+      if (tag.viewports != null && entry.viewports != null && entry.viewports !== tag.viewports) continue; // 동일 뷰포트 집합만
+      out.push(entry);
     }
-    return null;
   } catch (_) {
-    return null;
+    return out;
   }
+  return out;
+}
+
+function readPreviousScore(mode, route, styleMode, viewports) {
+  const rows = readHealthHistory({ mode, route, styleMode, viewports }, 1);
+  return rows.length > 0 ? rows[0].score : null;
+}
+
+// ── 정체(stagnation) 판정 ──
+// "최근 N회를 눈으로 비교해 정체면 접근을 바꿔라"는 지시는 모델에게 산수를 시킨다.
+// 스크립트가 결정론적으로 계산하고 SKILL은 값만 인용한다.
+//   scores: 최신순 점수 배열. spread(최댓값-최솟값)가 tolerance 이내면 정체.
+//   delta : 최신 - 가장 오래된 (방향)
+const STAGNATION_RUNS = 3;
+
+function classifyStagnation(scores, runs = STAGNATION_RUNS, tolerance = REGRESSION_TOLERANCE) {
+  const list = (Array.isArray(scores) ? scores : []).filter(Number.isFinite);
+  if (list.length < runs) {
+    return { status: 'insufficient', delta: null, spread: null, runs: list.length, required: runs, scores: list };
+  }
+  const window = list.slice(0, runs);          // 최신순
+  const newest = window[0];
+  const oldest = window[window.length - 1];
+  const round = v => Math.round(v * 100) / 100;
+  const spread = round(Math.max(...window) - Math.min(...window));
+  return {
+    status: spread <= tolerance ? 'stagnant' : 'none',
+    delta: round(newest - oldest),
+    spread,
+    runs,
+    required: runs,
+    tolerance,
+    scores: window,
+  };
 }
 
 function appendHealthHistory(report) {
@@ -719,6 +974,7 @@ function appendHealthHistory(report) {
     mode: report.mode,
     route: report.route,
     styleMode: report.styleMode || 'heuristic',
+    viewports: report.viewports || null,
   }) + '\n';
   fs.appendFileSync(fp, line);
 }
@@ -736,20 +992,23 @@ function classifyRegression(diff, tolerance = REGRESSION_TOLERANCE) {
   return 'unchanged';
 }
 
-function saveHealthScore(healthScore, extras = {}, meta = {}) {
-  const healthScoreDir = path.join(process.cwd(), '.design-polish');
-  ensureDir(healthScoreDir);
-  const filepath = path.join(healthScoreDir, 'health-score.json');
-  validatePathWithinDir(filepath, healthScoreDir);
-
+// health-score.json의 최종 형태를 만드는 **순수 함수**. 파일 IO·시계·이력 읽기를 하지 않는다.
+// (계약 테스트가 게이트 소비 필드를 고정하려면 IO 없이 형태를 재현할 수 있어야 한다.)
+//
+// 하위 호환 계약 — auto-complete-loop/scripts/gates/design.sh가 읽는 필드:
+//   .score, .styleMode,
+//   .regression.diff, .regression.status,
+//   .tokenDrift.enabled, .tokenDrift.totalViolations, .tokenDrift.newViolationCount
+// 이름과 의미를 바꾸지 않는다. 추가만 한다.
+function buildHealthScore(healthScore, extras = {}, meta = {}, context = {}) {
   const mode = meta.mode || 'full';
   const route = meta.route || '/';
   const styleMode = meta.styleMode || 'heuristic';
+  const viewports = meta.viewports || null;
 
-  // Regression baseline 비교 — 이력에서 동일 mode+route+styleMode 직전 회차 기준 (append 전에 읽음)
-  const previousScore = readPreviousScore(mode, route, styleMode);
+  const previousScore = context.previousScore != null ? context.previousScore : null;
   let regression = null;
-  if (previousScore != null) {
+  if (previousScore != null && Number.isFinite(healthScore.score)) {
     const diff = healthScore.score - previousScore;
     regression = {
       previousScore,
@@ -761,26 +1020,77 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
       mode,
       route,
       styleMode,
+      viewports,
     };
   }
 
-  const report = {
+  // 정체 판정 — 이번 회차를 포함한 최신순 점수 목록으로 스크립트가 계산한다.
+  const recent = Array.isArray(context.recentScores) ? context.recentScores : [];
+  const stagnation = classifyStagnation(
+    [healthScore.score, ...recent].filter(Number.isFinite)
+  );
+
+  // severity 집계 — Pivot 판정이 5단계에서만 존재하던 값을 참조하던 순환을 끊는다.
+  const ruleFailureSummary = contractLib.summarizeSeverity(extras.ruleFailures);
+
+  // 래칫 baseline 상태 — fresh | reused | refrozen(contract changed)
+  const baseline = context.baseline || { status: 'n/a', reason: 'no contract' };
+
+  return {
     ...healthScore,
     ...extras,
     mode,
     route,
     styleMode,
-    timestamp: new Date().toISOString(),
+    viewports,
+    timestamp: context.timestamp || new Date().toISOString(),
     regression,
+    stagnation,
+    ruleFailureSummary,
+    baseline,
   };
+}
+
+function saveHealthScore(healthScore, extras = {}, meta = {}) {
+  const healthScoreDir = path.join(process.cwd(), '.design-polish');
+  ensureDir(healthScoreDir);
+  const filepath = path.join(healthScoreDir, 'health-score.json');
+  validatePathWithinDir(filepath, healthScoreDir);
+
+  const mode = meta.mode || 'full';
+  const route = meta.route || '/';
+  const styleMode = meta.styleMode || 'heuristic';
+  const viewports = meta.viewports || null;
+
+  // 이력에서 동일 mode+route+styleMode+viewports 회차만 읽는다 (append 전에 읽음).
+  const tag = { mode, route, styleMode, viewports };
+  const history = readHealthHistory(tag, STAGNATION_RUNS);
+  const previousScore = history.length > 0 ? history[0].score : null;
+
+  const report = buildHealthScore(healthScore, extras, { ...meta, viewports }, {
+    previousScore,
+    recentScores: history.map(h => h.score),
+    baseline: meta.baseline,
+    timestamp: new Date().toISOString(),
+  });
 
   fs.writeFileSync(filepath, JSON.stringify(report, null, 2));
   appendHealthHistory(report);
 
   console.log(`Design Health Score: ${healthScore.score}/100`);
   console.log(`  breakdown: wcagCritical ${report.breakdown.wcagCritical}, wcagSerious ${report.breakdown.wcagSerious}, console ${report.breakdown.consoleErrors}, styleFit ${report.breakdown.styleFit}, performance ${report.breakdown.performance}`);
-  if (regression) {
-    console.log(`  ${regression.status}: ${regression.previousScore} → ${regression.currentScore} (${regression.diff >= 0 ? '+' : ''}${regression.diff})`);
+  if (report.regression) {
+    const r = report.regression;
+    console.log(`  ${r.status}: ${r.previousScore} → ${r.currentScore} (${r.diff >= 0 ? '+' : ''}${r.diff})`);
+  }
+  if (report.stagnation) {
+    const st = report.stagnation;
+    console.log(st.status === 'insufficient'
+      ? `  stagnation: insufficient (${st.runs}/${st.required} runs)`
+      : `  stagnation: ${st.status} (last ${st.runs} runs, delta ${st.delta >= 0 ? '+' : ''}${st.delta}, spread ${st.spread})`);
+  }
+  if (report.baseline && report.baseline.status && report.baseline.status !== 'n/a') {
+    console.log(`  token baseline: ${report.baseline.status}${report.baseline.reason ? ` (${report.baseline.reason})` : ''}`);
   }
   return report;
 }
@@ -790,6 +1100,10 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
 function printRuleFailures(ruleFailures, drift) {
   if (drift && drift.enabled) {
     console.log(`  Token drift: ${drift.totalViolations} violation(s), ${drift.newViolationCount} new (baseline ${drift.hasBaseline ? 'on' : 'off'})`);
+    if (drift.measurement === 'incomplete') {
+      // 값 상한(200종)에 걸린 범주가 있다 — 위 수치는 하한값이다.
+      console.log(`    measurement: incomplete — 값 상한 도달: ${(drift.capped || []).join(', ')} (styleFit은 이 범주를 완전히 반영하지 못함)`);
+    }
   } else {
     console.log('  Token drift: skipped (no .design-polish/design-decisions.json)');
   }
@@ -827,13 +1141,29 @@ async function createBrowser() {
 
 // 현재 프로젝트 캡처
 async function captureLocal(routes, options = { wcag: true, responsive: false }) {
-  // 서버 상태 확인
-  const serverStatus = await checkServer(CONFIG.baseUrl);
-  if (!serverStatus.ok) {
-    console.error(`Server not running: ${CONFIG.baseUrl}`);
-    console.log('\n개발 서버를 먼저 실행해주세요. (예: npm run dev)');
+  // 도달성 프로브 — 대상 라우트를 전부 두드린다.
+  // 서버가 안 떠 있을 때만(연결 실패) 중단하고, 개별 라우트의 404는 그 라우트만 건너뛴다.
+  const probe = await probeTargets(CONFIG.baseUrl, routes);
+  if (probe.down) {
+    console.error(JSON.stringify({
+      error: 'SERVER_DOWN', reason: probe.downReason, baseUrl: CONFIG.baseUrl, probes: probe.probes,
+    }, null, 2));
+    console.error(`Server not running: ${CONFIG.baseUrl} (${probe.downReason})`);
+    console.error('개발 서버를 먼저 실행해주세요. (예: npm run dev)');
     process.exit(1);
   }
+  for (const sk of probe.skipped) {
+    console.warn(`Skipping route ${sk.route}: ${sk.reason}`);
+  }
+  const targetRoutes = probe.reachable;
+  if (targetRoutes.length === 0) {
+    console.error(JSON.stringify({
+      error: 'NO_REACHABLE_ROUTE', baseUrl: CONFIG.baseUrl, skipped: probe.skipped,
+    }, null, 2));
+    console.error('서버는 응답하지만 지정한 라우트가 모두 4xx/5xx입니다. BASE_URL 또는 --routes를 확인하세요.');
+    process.exit(2);
+  }
+  routes = targetRoutes;
 
   ensureDir(CONFIG.outputDir);
   console.log(`\nCapturing local project: ${CONFIG.baseUrl}`);
@@ -850,7 +1180,10 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
       ? CONFIG.viewports
       : [{ name: 'desktop', ...CONFIG.viewport }];
 
-    const results = [];
+    const results = probe.skipped.map(sk => ({
+      route: sk.route, viewport: null, filename: null, success: false,
+      skipped: { reason: sk.reason, status: sk.status },
+    }));
     let wcagReport = null;
     let styleMetrics = null;
     let perfMetrics = null;
@@ -947,22 +1280,46 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
     // ── 디자인 계약(.design-polish/design-decisions.json) 로드 + 룰 린트
     // 계약이 없으면 drift.enabled=false → styleFit은 기존 heuristic 산식 그대로 (하위호환).
     const contract = contractLib.readDesignContract(process.cwd());
-    let baseline = contractLib.readTokenBaseline(process.cwd());
+    const storedBaseline = contractLib.readTokenBaseline(process.cwd());
+    // 계약이 바뀌면 옛 동결은 다른 기준의 유물이다 — contractHash로 무효화(stale) 판정한다.
+    // 그대로 두면 "허용 토큰을 바꿨는데 아무 위반도 안 잡히는" 영구 동결이 된다.
+    const baselineState = contractLib.resolveTokenBaseline(storedBaseline, contract);
+    let baseline = baselineState.baseline;
     const styleCapped = (styleMetrics && styleMetrics.capped) || {};
     let drift = contractLib.lintTokenDrift(
       styleMetrics && styleMetrics.values, contract, baseline, styleCapped
     );
 
-    // 래칫 — 계약 도입 첫 회차에는 기존 위반을 baseline으로 동결한다.
+    // 래칫 — 계약 도입 첫 회차(또는 계약 변경 직후)에는 현재 위반을 baseline으로 (재)동결한다.
     // (브라운필드에서 첫 실행부터 수백 건 위반으로 점수가 0이 되어 아무도 못 쓰는 교착 방지.
     //  이후 회차는 '새로 생긴 위반'만 -2로 강하게 처벌하고 baseline 잔여는 -0.1로 완만히 압박.
-    //  재기준선이 필요하면 token-baseline.json을 삭제하면 된다.)
+    //  수동 재기준선이 필요하면 token-baseline.json을 삭제하면 된다.)
     if (drift.enabled && !baseline) {
-      contractLib.writeTokenBaseline(drift, process.cwd());
+      contractLib.writeTokenBaseline(drift, process.cwd(), {
+        contractHash: baselineState.contractHash,
+        routes,
+      });
       baseline = contractLib.readTokenBaseline(process.cwd());
       drift = contractLib.lintTokenDrift(styleMetrics && styleMetrics.values, contract, baseline, styleCapped);
-      console.log(`  Token baseline created: ${drift.totalViolations} pre-existing violation(s) frozen`);
+      console.log(`  Token baseline ${baselineState.status === 'fresh' ? 'created' : 're-frozen'}: ${drift.totalViolations} violation(s) frozen (${baselineState.reason})`);
+    } else if (drift.enabled && baselineState.needsRewrite) {
+      // v2.5 baseline(contractHash 없음)을 채택했다 — 동결값은 그대로 두고 메타(해시·라우트)만 붙여 다시 쓴다.
+      // 여기서 현재 위반으로 재동결하면 업그레이드 시점에 쌓인 신규 부채가 조용히 baseline에 흡수된다.
+      contractLib.rewriteTokenBaselineMeta(baseline, process.cwd(), {
+        contractHash: baselineState.contractHash,
+        routes: (baseline.routes && baseline.routes.length > 0) ? baseline.routes : routes,
+      });
+      console.log(`  Token baseline adopted: legacy file kept, contractHash recorded (${baselineState.reason})`);
     }
+    const baselineReport = drift.enabled
+      ? {
+          status: baselineState.status,
+          reason: baselineState.reason,
+          contractHash: baselineState.contractHash,
+          createdAt: baseline ? baseline.createdAt : null,
+          routes: baseline ? baseline.routes : null,
+        }
+      : { status: 'n/a', reason: (contract && contract.reason) || 'no contract' };
 
     const koreanLint = contractLib.lintKoreanTypography(koreanMetrics);
     const stateLint = contractLib.lintStateContract(stateMetrics);
@@ -1000,6 +1357,9 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
       route: primaryRoute,
       // 계약 유무로 styleFit 산식이 달라지므로 이력에 함께 태깅 (크로스 산식 비교 차단)
       styleMode: drift.enabled ? 'contract' : 'heuristic',
+      // 뷰포트 집합이 다르면 콘솔 에러 수집량·모바일 패스 유무가 달라 점수 상한이 다르다
+      viewports: viewportTag(viewportsToUse),
+      baseline: baselineReport,
     });
 
     printRuleFailures(ruleFailures, drift);
@@ -1092,12 +1452,25 @@ async function captureReferences(refs) {
 
 // WCAG 체크만 수행
 async function wcagOnly(routes) {
-  const serverStatus = await checkServer(CONFIG.baseUrl);
-  if (!serverStatus.ok) {
-    console.error(`Server not running: ${CONFIG.baseUrl}`);
-    console.log('\n개발 서버를 먼저 실행해주세요. (예: npm run dev)');
+  const probe = await probeTargets(CONFIG.baseUrl, routes);
+  if (probe.down) {
+    console.error(JSON.stringify({
+      error: 'SERVER_DOWN', reason: probe.downReason, baseUrl: CONFIG.baseUrl, probes: probe.probes,
+    }, null, 2));
+    console.error(`Server not running: ${CONFIG.baseUrl} (${probe.downReason})`);
+    console.error('개발 서버를 먼저 실행해주세요. (예: npm run dev)');
     process.exit(1);
   }
+  for (const sk of probe.skipped) {
+    console.warn(`Skipping route ${sk.route}: ${sk.reason}`);
+  }
+  if (probe.reachable.length === 0) {
+    console.error(JSON.stringify({
+      error: 'NO_REACHABLE_ROUTE', baseUrl: CONFIG.baseUrl, skipped: probe.skipped,
+    }, null, 2));
+    process.exit(2);
+  }
+  routes = probe.reachable;
 
   if (!AxePuppeteer) {
     console.error('axe-core/puppeteer not installed. Run: npm install @axe-core/puppeteer');
@@ -1313,10 +1686,19 @@ async function main() {
 // main()은 직접 실행(require.main)일 때만 구동.
 module.exports = {
   scoreConsistency,
+  scoreTokenDriftPenalty,
+  CONTRACT_PENALTY,
+  STYLE_FIT_MAX,
   scorePerformance,
   calculateDesignHealthScore,
   dedupeErrors,
   classifyRegression,
+  REGRESSION_TOLERANCE,
+  classifyStagnation,
+  STAGNATION_RUNS,
+  buildHealthScore,
+  viewportTag,
+  readHealthHistory,
   sanitizeRouteName,
   validatePathWithinDir,
   readPreviousScore,

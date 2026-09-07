@@ -1,12 +1,14 @@
 ---
 name: design-from-screenshot
-description: 스크린샷/이미지에서 UI 코드를 생성. Claude 비전으로 디자인 속성을 추출하고, 디자인 지식 DB(BM25)로 매칭하여 프레임워크별 코드 생성
+description: 스크린샷/이미지에서 UI 코드를 생성. Claude 비전으로 디자인 속성을 추출하고, 디자인 지식 DB(BM25)로 매칭하여 프레임워크별 코드 생성. 디자인 계약이 있으면 계약 토큰을 제약으로 사용.
+allowed-tools: Read, Write, Glob, Grep, Bash, Edit
+version: "2.6.0"
 ---
 
 # Design from Screenshot
 
 스크린샷 또는 디자인 이미지를 분석하여 프레임워크별 UI 코드를 생성합니다.
-Claude의 비전 능력 + design-polish 지식 기반(67 styles, 96 colors, 57 typography)을 결합합니다.
+Claude의 비전 능력 + design-polish 지식 기반(스타일/색상/타이포그래피 — 건수는 `search.cjs --help`가 실측해 출력)을 결합합니다.
 
 ## 인자
 
@@ -38,6 +40,49 @@ Claude의 비전 능력 + design-polish 지식 기반(67 styles, 96 colors, 57 t
    - `*.module.css` 파일 존재 → CSS Modules
    - `*.scss` 파일 존재 → SCSS
    - 그 외 → 일반 CSS
+
+### Phase 0.5: 디자인 계약 로드 (있으면 필수)
+
+이 스킬은 원래 "이미지가 곧 정답"이라는 전제로 동작했습니다. 그래서 계약(`.design-polish/`)이
+있는 프로젝트에서 실행하면 **이미지에서 추정한 색/간격/모서리를 그대로 코드에 넣어**
+DP-T001~T004 신규 위반을 만들어냈습니다 — design-polish가 잡아내고 사람이 되돌리는 낭비입니다.
+계약이 있으면 **이미지는 참조, 계약은 제약**입니다.
+
+```bash
+ls .design-polish/design-decisions.json .design-polish/DESIGN.md 2>/dev/null
+```
+
+**계약이 있으면:**
+
+```
+Read(".design-polish/DESIGN.md")               # 왜 그런 디자인인가 (원칙·톤)
+Read(".design-polish/design-decisions.json")   # 기계 검사 가능한 허용 토큰 집합
+```
+
+- `tokens.color` / `spacing` / `borderRadius` / `fontFamily` / `shadow`의 `allowed` 목록이
+  **생성 코드가 쓸 수 있는 값의 전부**입니다.
+- Phase 1에서 이미지로부터 추정한 값은 **가장 가까운 허용 토큰으로 스냅**합니다.
+  (예: 이미지에서 `#2E63E8`를 읽었고 계약에 `#3B82F6`가 있으면 → `#3B82F6`)
+- Phase 2의 지식 DB 매칭 결과도 계약과 충돌하면 **계약이 이깁니다.** DB는 계약에 없는
+  카테고리(레이아웃, 컴포넌트 관용구, 반응형 전략)를 채우는 데만 씁니다.
+- 스냅한 항목은 Phase 5에서 "이미지 값 → 채택 토큰"으로 **전부 보고**합니다.
+  사용자가 "이건 정말 새 값이어야 한다"고 판단할 근거를 남기기 위함입니다.
+
+**계약에 없는 값이 정말 필요하면** (예: 이미지의 핵심 브랜드 색이 계약에 없음):
+임의로 코드에 넣지 말고 **결정으로 승격**합니다.
+
+1. 사용자에게 그 값이 필요한 이유를 제시하고 승인을 받는다.
+2. `design-decisions.json`의 `decisions[]`에 **다음 번호의 `DD-NNN`**(기존 최대 번호 + 1)으로
+   `{id, title, value, rationale, provenance}`를 append하고, 해당 카테고리 `tokens.<cat>.allowed`에 값을 추가한다.
+3. `DESIGN.md`의 결정 표에도 같은 줄을 추가한다 (두 파일은 1:1 동기화가 원칙).
+4. 그 다음에 코드에 쓴다.
+
+> `token-baseline.json`은 계약 해시로 무효화되므로, 계약을 고치면 다음 캡처에서
+> 자동 재동결됩니다. 사람이 손댈 필요 없습니다.
+
+**계약이 없으면:** 기존대로 이미지 + 지식 DB 기반으로 진행합니다. 다만 Phase 5에서
+생성한 토큰 목록을 제시하며 "`/design-renewal`로 계약을 세우면 이후 실행이 이 값들을
+지킨다"고 1줄 안내합니다.
 
 ### Phase 1: Visual Analysis (Claude Vision)
 
@@ -190,6 +235,9 @@ Phase 1(시각 분석) + Phase 2(지식 매칭) 결과를 결합하여 코드를
    | --shadow-md | 0 4px 6px rgba(0,0,0,0.1) | DB match: Flat Design |
    ```
 
+   계약이 있으면 `Source` 열에 `Contract: DD-NNN`을 쓰고, 이미지 값에서 스냅한 경우
+   `Contract: DD-009 (image #2E63E8 → #3B82F6)` 형태로 **원래 추정값을 함께** 남깁니다.
+
 2. **생성된 코드**
    프레임워크별 완전한 코드 블록
 
@@ -199,10 +247,27 @@ Phase 1(시각 분석) + Phase 2(지식 매칭) 결과를 결합하여 코드를
 
 #### --apply 모드
 
-파일을 직접 작성:
+**적용 전 백업이 선행 조건입니다 (fail-closed).** 새 파일만 만드는 것처럼 보여도
+동명 컴포넌트/토큰 파일을 덮어쓰면 사용자 코드가 사라집니다.
+
+```
+Read ${CLAUDE_PLUGIN_ROOT}/knowledge/backup-procedure.md
+```
+
+- `BACKUP_LABEL`은 `design-from-screenshot`을 사용합니다.
+- 백업 지점을 하나도 확보하지 못하면 **파일을 쓰지 않고** 코드 블록으로만 제시합니다.
+
+백업 확보 후 파일을 직접 작성:
 - 컴포넌트 파일
 - 스타일 파일 (별도인 경우)
-- 디자인 토큰 파일 (CSS 변수 / Tailwind config / ThemeData)
+- 디자인 토큰 파일 (CSS 변수 / Tailwind config / ThemeData) — **계약이 있으면 계약 값과 일치해야 함**
+
+작성 후 계약이 있는 프로젝트라면 검증을 권합니다:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs" <생성한 화면의 라우트>
+# tokenDrift.newViolationCount 가 0이어야 정상 (신규 위반 = 계약을 어긴 값이 들어감)
+```
 
 ## 제약사항
 
@@ -216,3 +281,7 @@ Phase 1(시각 분석) + Phase 2(지식 매칭) 결과를 결합하여 코드를
 - **design-polish**: 기존 코드를 개선 (코드 → 더 좋은 코드)
 - **design-renewal**: 기존 디자인을 전면 교체 (코드 → 새 코드)
 - **design-from-screenshot**: 이미지에서 코드 생성 (이미지 → 코드) ← 이 스킬
+
+세 스킬은 **같은 디자인 계약**(`.design-polish/DESIGN.md` + `design-decisions.json`)을 공유합니다.
+계약을 세우는 것은 design-renewal(5-7단계), 지키는지 재는 것은 design-polish(토큰 드리프트 린트),
+계약 안에서 새 화면을 만드는 것이 이 스킬입니다.

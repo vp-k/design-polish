@@ -233,12 +233,45 @@ test('scoreConsistency: 신규 위반은 -2, baseline 잔여는 -0.1로 차등 �
   assert.strictEqual(r.detail.borderRadius.newViolations, 1);
 });
 
-test('scoreConsistency: 감점이 커도 0 아래로 내려가지 않는다', () => {
+test('scoreConsistency: 신규 위반 감점은 -12에서 멈춘다 (상한 분리)', () => {
   const baseline = { values: { borderRadius: new Set() } };
   const many = Array.from({ length: 20 }, (_, i) => v(`${i + 100}px`));
   const drift = C.lintTokenDrift({ borderRadius: many }, CONTRACT, baseline);
   const r = scoreConsistency({ sampled: 200 }, drift);
-  assert.strictEqual(r.score, 0);
+  // 신규 20건 × 2 = 40이지만 신규 상한 12로 잘린다 → 15 - 12 = 3
+  assert.strictEqual(r.score, 3);
+  assert.strictEqual(r.penalty.newCapped, true);
+  assert.strictEqual(r.penalty.newPenalty, 12);
+});
+
+test('scoreConsistency: 기존 부채만 많으면 잔여 상한(-3)만 적용된다', () => {
+  // 브라운필드 래칫의 핵심 — 신규 0건인데 기존 부채 150건으로 styleFit이 0이 되면
+  // "고칠 것을 안 만들었는데도 점수가 바닥"이라 래칫이 무의미해진다.
+  const values = Array.from({ length: 150 }, (_, i) => `${i + 100}px`);
+  const drift = C.lintTokenDrift(
+    { borderRadius: values.map(x => v(x)) },
+    CONTRACT,
+    { values: { borderRadius: new Set(values) } }   // 전부 baseline에 동결됨
+  );
+  assert.strictEqual(drift.newViolationCount, 0);
+  const r = scoreConsistency({ sampled: 200 }, drift);
+  assert.strictEqual(r.penalty.newPenalty, 0);
+  assert.strictEqual(r.penalty.baselinePenalty, 3);   // 150 × 0.1 = 15 → 상한 3
+  assert.strictEqual(r.penalty.baselineCapped, true);
+  assert.strictEqual(r.score, 12);
+});
+
+test('scoreConsistency: 신규 + 잔여 상한을 동시에 쳐도 0 아래로 내려가지 않는다', () => {
+  const base = Array.from({ length: 100 }, (_, i) => `${i + 500}px`);
+  const fresh = Array.from({ length: 30 }, (_, i) => `${i + 900}px`);
+  const drift = C.lintTokenDrift(
+    { borderRadius: [...base, ...fresh].map(x => v(x)) },
+    CONTRACT,
+    { values: { borderRadius: new Set(base) } }
+  );
+  const r = scoreConsistency({ sampled: 200 }, drift);
+  assert.strictEqual(r.score, 0);   // 12 + 3 = 15 감점
+  assert.ok(r.score >= 0);
 });
 
 test('scoreConsistency: 표본 부족은 계약 유무와 무관하게 insufficient', () => {
@@ -334,8 +367,9 @@ test('DP-S001: disabled가 opacity만으로 표현되면(커서 미변경) 잡�
   assert.strictEqual(f.samples[0].selector, 'button.a');
 });
 
-test('DP-S002: 포커스 시 스타일 변화 없음은 CRITICAL로 최상단', () => {
+test('DP-S002: 실제 키보드 포커스로 잰 변화 없음은 CRITICAL로 최상단', () => {
   const r = C.lintStateContract({
+    focusMethod: 'keyboard-tab',
     focusable: [
       { selector: 'a.x', focusChanged: false },
       { selector: 'a.y', focusChanged: true },
@@ -371,7 +405,10 @@ test('summarizeRuleFailures: 심각도 순 정렬 + 비활성 린트는 무시',
       { selector: '.a', fontFamily: 'Inter, serif', chars: 80, wordBreak: 'normal', overflowWrap: 'normal', block: true },
     ],
   });
-  const state = C.lintStateContract({ focusable: [{ selector: 'a.x', focusChanged: false }] });
+  const state = C.lintStateContract({
+    focusMethod: 'keyboard-tab',
+    focusable: [{ selector: 'a.x', focusChanged: false }],
+  });
   const out = C.summarizeRuleFailures({ enabled: false }, korean, state, null);
   assert.strictEqual(out[0].id, 'DP-S002');        // CRITICAL
   assert.strictEqual(out[1].id, 'DP-K001');        // HIGH
@@ -396,6 +433,191 @@ test('RULES 레지스트리: 린트가 내는 모든 ID가 등록되어 있다',
   for (const id of ['DP-K001', 'DP-K002', 'DP-K003', 'DP-S001', 'DP-S002', 'DP-S003']) {
     assert.ok(ids.has(id), `${id} 미등록`);
   }
+});
+
+// == hashContract / resolveTokenBaseline (H2: 계약이 바뀌면 baseline은 무효다) ==
+const CONTRACT_B = C.parseDesignContract({
+  version: 1,
+  tokens: {
+    borderRadius: { decision: 'DD-014', allowed: ['8px', '12px', '16px'] },   // 16px 추가
+    color: { decision: 'DD-009', allowed: ['#FFFFFF', '#0F172A'] },
+  },
+});
+
+test('hashContract: 허용 토큰 순서가 달라도 같은 계약이면 같은 해시', () => {
+  const a = C.parseDesignContract({ version: 1, tokens: { borderRadius: { allowed: ['8px', '12px'] } } });
+  const b = C.parseDesignContract({ version: 1, tokens: { borderRadius: { allowed: ['12px', '8px'] } } });
+  assert.strictEqual(C.hashContract(a), C.hashContract(b));
+});
+
+test('hashContract: 허용 토큰이 하나라도 바뀌면 해시가 달라진다', () => {
+  assert.notStrictEqual(C.hashContract(CONTRACT), C.hashContract(CONTRACT_B));
+});
+
+test('hashContract: 계약이 없으면 null', () => {
+  assert.strictEqual(C.hashContract({ enabled: false }), null);
+  assert.strictEqual(C.hashContract(null), null);
+});
+
+test('resolveTokenBaseline: baseline 파일이 없으면 fresh', () => {
+  const r = C.resolveTokenBaseline(null, CONTRACT);
+  assert.strictEqual(r.status, 'fresh');
+  assert.strictEqual(r.stale, false);
+  assert.strictEqual(r.contractHash, C.hashContract(CONTRACT));
+});
+
+test('resolveTokenBaseline: 계약이 그대로면 reused (래칫 유지)', () => {
+  const baseline = { contractHash: C.hashContract(CONTRACT), values: {} };
+  const r = C.resolveTokenBaseline(baseline, CONTRACT);
+  assert.strictEqual(r.status, 'reused');
+  assert.strictEqual(r.stale, false);
+  assert.strictEqual(r.baseline, baseline);
+});
+
+test('resolveTokenBaseline: 계약이 바뀌면 refrozen — 낡은 동결을 버린다', () => {
+  const baseline = { contractHash: C.hashContract(CONTRACT), values: { borderRadius: ['3px'] } };
+  const r = C.resolveTokenBaseline(baseline, CONTRACT_B);
+  assert.strictEqual(r.status, 'refrozen(contract changed)');
+  assert.strictEqual(r.stale, true);
+  assert.strictEqual(r.baseline, null);   // 이전 동결값을 물려주지 않는다
+  assert.ok(r.reason.includes('contract hash'));
+});
+
+test('resolveTokenBaseline: contractHash 없는 구(舊) baseline은 버리지 않고 채택(reused + needsRewrite)', () => {
+  // 재동결하면 업그레이드 시점까지 쌓인 신규 부채가 baseline에 흡수된다 — 동결값을 물려받아야 한다.
+  const legacy = { values: { borderRadius: ['3px'] } };
+  const r = C.resolveTokenBaseline(legacy, CONTRACT);
+  assert.strictEqual(r.status, 'reused');
+  assert.strictEqual(r.stale, false);
+  assert.strictEqual(r.baseline, legacy);
+  assert.strictEqual(r.needsRewrite, true);
+  assert.strictEqual(r.contractHash, C.hashContract(CONTRACT));
+});
+
+test('rewriteTokenBaselineMeta: 동결값은 그대로 두고 contractHash·routes만 붙여 다시 쓴다', () => {
+  const dir = tmpdir();
+  try {
+    fs.mkdirSync(path.join(dir, '.design-polish'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.design-polish', 'token-baseline.json'), JSON.stringify({
+      createdAt: '2026-01-01T00:00:00.000Z',
+      values: { borderRadius: ['3px', '7px'] },
+    }));
+    const legacy = C.readTokenBaseline(dir);
+    assert.strictEqual(legacy.contractHash, null);
+    const fp = C.rewriteTokenBaselineMeta(legacy, dir, { contractHash: 'abc123', routes: ['/'] });
+    const saved = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    assert.strictEqual(saved.contractHash, 'abc123');
+    assert.deepStrictEqual(saved.routes, ['/']);
+    assert.deepStrictEqual(saved.values.borderRadius.sort(), ['3px', '7px']);
+    assert.strictEqual(saved.createdAt, '2026-01-01T00:00:00.000Z');   // 원 동결 시각 보존
+    assert.ok(saved.adoptedAt);
+    // 다시 읽으면 reused(needsRewrite 없음) — 1회성 채택이 끝난다
+    const again = C.resolveTokenBaseline(C.readTokenBaseline(dir), { allowed: {} });
+    assert.strictEqual(again.baseline.contractHash, 'abc123');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeTokenBaseline: contractHash와 routes를 함께 기록한다', () => {
+  const dir = tmpdir();
+  try {
+    const drift = C.lintTokenDrift({ borderRadius: [v('3px')] }, CONTRACT, null);
+    const fp = C.writeTokenBaseline(drift, dir, { contractHash: 'abc123', routes: ['/', '/pricing'] });
+    const saved = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    assert.strictEqual(saved.contractHash, 'abc123');
+    assert.deepStrictEqual(saved.routes, ['/', '/pricing']);
+    assert.ok(saved.values.borderRadius.includes('3px'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// == summarizeSeverity (M2: Pivot 판정 근거를 스크립트가 만든다) ==
+test('summarizeSeverity: 심각도별 규칙 수/위반 수와 차단 합계를 낸다', () => {
+  const out = C.summarizeSeverity([
+    { rule: 'DP-T004', severity: 'CRITICAL', count: 3 },
+    { rule: 'DP-K001', severity: 'HIGH', count: 2 },
+    { rule: 'DP-T001', severity: 'MEDIUM', count: 7 },
+    { rule: 'DP-T005', severity: 'LOW', count: 1 },
+  ]);
+  assert.strictEqual(out.totalRules, 4);
+  assert.strictEqual(out.totalViolations, 13);
+  assert.strictEqual(out.blockingRules, 2);
+  assert.strictEqual(out.blockingViolations, 5);
+  assert.strictEqual(out.rules.MEDIUM, 1);
+  assert.strictEqual(out.violations.LOW, 1);
+});
+
+test('summarizeSeverity: 빈 입력/null도 0으로 채운 동일 형태를 낸다', () => {
+  for (const input of [[], null, undefined]) {
+    const out = C.summarizeSeverity(input);
+    assert.strictEqual(out.totalRules, 0);
+    assert.strictEqual(out.blockingViolations, 0);
+    assert.deepStrictEqual(Object.keys(out.rules), C.SEVERITY_LEVELS);
+  }
+});
+
+test('summarizeSeverity: 알 수 없는 severity는 LOW로 떨어뜨린다(집계 누락 방지)', () => {
+  const out = C.summarizeSeverity([{ rule: 'X', severity: 'MAJOR', count: 4 }]);
+  assert.strictEqual(out.violations.LOW, 4);
+  assert.strictEqual(out.blockingViolations, 0);
+});
+
+test('SEVERITY_LEVELS: 4단계이고 순서가 CRITICAL > HIGH > MEDIUM > LOW', () => {
+  assert.deepStrictEqual(C.SEVERITY_LEVELS, ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+  assert.ok(C.SEVERITY_ORDER.CRITICAL < C.SEVERITY_ORDER.HIGH);
+  assert.ok(C.SEVERITY_ORDER.HIGH < C.SEVERITY_ORDER.MEDIUM);
+  assert.ok(C.SEVERITY_ORDER.MEDIUM < C.SEVERITY_ORDER.LOW);
+});
+
+// == DP-S002 오탐 차단 (H1) ==
+test('DP-S002: focus-visible 규칙이 있는 페이지면 INFO로 강등한다(오탐 차단)', () => {
+  const r = C.lintStateContract({
+    focusMethod: 'keyboard-tab',
+    hasFocusVisibleRule: true,
+    focusable: [{ selector: 'button.a', focusChanged: false }],
+  });
+  assert.strictEqual(r.findings.length, 0);
+  assert.strictEqual(r.info.length, 1);
+  assert.strictEqual(r.info[0].id, 'DP-S002');
+});
+
+test('DP-S002: 키보드 순회로 재지 못했으면(el.focus 등) INFO로 강등', () => {
+  const r = C.lintStateContract({
+    focusMethod: 'element-focus',
+    focusable: [{ selector: 'button.a', focusChanged: false }],
+  });
+  assert.strictEqual(r.findings.length, 0);
+  assert.strictEqual(r.info.length, 1);
+});
+
+test('DP-S002: 계측 메타(순회 상한/시간초과)를 결과에 남긴다', () => {
+  const r = C.lintStateContract({
+    focusMethod: 'keyboard-tab',
+    focusTraversalCapped: true,
+    focusTimedOut: false,
+    focusable: [{ selector: 'button.a', focusChanged: true }],
+  });
+  assert.strictEqual(r.focusMethod, 'keyboard-tab');
+  assert.strictEqual(r.focusTraversalCapped, true);
+  assert.strictEqual(r.focusTimedOut, false);
+});
+
+// == 측정 불완전 표시 (L2) ==
+test('lintTokenDrift: 값 상한에 걸리지 않으면 measurement=complete', () => {
+  const r = C.lintTokenDrift({ borderRadius: [v('3px')] }, CONTRACT, null);
+  assert.strictEqual(r.measurement, 'complete');
+  assert.deepStrictEqual(r.capped, []);
+});
+
+test('lintTokenDrift: 값 상한(200종) 도달은 incomplete로 표시하되 신규 카운트는 유지', () => {
+  const many = Array.from({ length: 200 }, (_, i) => v(`${i + 100}px`));
+  // 계측 쪽에서 상한 도달을 알려준다 (capture.cjs styleMetrics.capped)
+  const r = C.lintTokenDrift({ borderRadius: many }, CONTRACT, null, { borderRadius: true });
+  assert.strictEqual(r.measurement, 'incomplete');
+  assert.ok(r.capped.includes('borderRadius'));
+  assert.strictEqual(typeof r.newViolationCount, 'number');   // 게이트 소비 필드는 그대로
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

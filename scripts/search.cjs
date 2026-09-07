@@ -26,9 +26,20 @@ const K1 = 1.5;
 const B = 0.75;
 
 // ── Tokenizer ──
+// Unicode letter/number classes (\p{L}\p{N}) with the `u` flag.
+// The previous [^a-z0-9.\s#-] class replaced every non-ASCII letter with a space,
+// so Korean queries ("의료 차분한") and Korean text inside data/*.json tokenized to
+// nothing — the BM25 index silently ignored half the corpus.
+// Kept: '.' (version-ish tokens), '#' (hex colors), '-' (compound words).
+const TOKEN_STRIP = /[^\p{L}\p{N}.\s#-]/gu;
+
 function tokenize(text) {
   if (!text) return [];
-  return text.toLowerCase().replace(/[^a-z0-9.\s#-]/g, ' ').split(/\s+/).filter(t => t.length > 1);
+  return String(text)
+    .toLowerCase()
+    .replace(TOKEN_STRIP, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1);
 }
 
 // ── BM25 Search ──
@@ -217,6 +228,20 @@ function parseArgs(argv) {
   return args;
 }
 
+// 데이터 건수는 파일에서 센다 — 문서에 박아둔 숫자가 데이터와 어긋나는 일을 없앤다.
+function countData(filename) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(DATA_DIR, filename), 'utf8'));
+    if (Array.isArray(raw)) return raw.length;
+    for (const key of Object.keys(raw)) {
+      if (Array.isArray(raw[key])) return raw[key].length;
+    }
+    return Object.keys(raw).length;
+  } catch (_) {
+    return '?';
+  }
+}
+
 function printUsage() {
   console.log(`
 design-polish search - BM25 search engine for design knowledge base
@@ -226,9 +251,9 @@ Usage:
   node search.cjs "<query>"                    # auto-detect domain
 
 Domains:
-  style       Search 67 design styles
-  color       Search 96 color palettes
-  typography  Search 57 typography pairings
+  style       Search ${countData('styles.json')} design styles
+  color       Search ${countData('colors.json')} color palettes
+  typography  Search ${countData('typography.json')} typography pairings
   stack       Search tech stack guides (requires --stack)
   all         Search style + color + typography simultaneously
 
@@ -300,4 +325,17 @@ function main() {
   console.log(JSON.stringify(output, null, 2));
 }
 
-main();
+module.exports = {
+  tokenize,
+  BM25,
+  K1,
+  B,
+  countData,
+  detectDomain,
+  parseArgs,
+};
+
+// 라이브러리로 require될 때는 CLI를 실행하지 않는다 (단위 테스트 가능).
+if (require.main === module) {
+  main();
+}

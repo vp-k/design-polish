@@ -2,16 +2,16 @@
 name: design-polish
 description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 66개 스타일/96개 색상/57개 타이포 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.5.0"
+version: "2.6.0"
 ---
 
-# 디자인 폴리싱 스킬 v2.0
+# 디자인 폴리싱 스킬
 
 디자인 지식 기반(서비스 유형별 규칙, 컴포넌트 체크리스트, UX 규칙) + 실시간 시각 비교(Puppeteer 스크린샷) + WCAG 자동 검사(axe-core) + 트렌드 검색(WebSearch) 통합 폴리싱.
 
 ### 지식 기반 리소스
 - **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙 (마크다운 직접 Read)
-- **data/**: 66개 디자인 스타일, 96개 색상 팔레트, 57개 타이포그래피, 13개 기술 스택 가이드 (JSON + BM25 검색)
+- **data/**: 디자인 스타일 / 색상 팔레트 / 타이포그래피 / 기술 스택 가이드 (JSON + BM25 검색). 정확한 건수는 문서에 박지 말고 `node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --help` 출력을 인용한다 — 데이터가 늘어도 문서가 거짓말하지 않는다.
 - **scripts/search.cjs**: Node.js BM25 검색 엔진
 
 ## 인수
@@ -107,12 +107,18 @@ Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -in 3000,5173,8
 ### 2. 플러그인 의존성 확인
 
 ```bash
-# 플러그인 디렉토리에서 npm install 실행 여부 확인
-ls ~/.claude/plugins/marketplaces/design-polish/node_modules/puppeteer
+# 플러그인이 실제로 설치된 경로에서 확인한다.
+# ${CLAUDE_PLUGIN_ROOT}는 Claude Code가 이 스킬에 주입하는 이 플러그인의 루트 경로다.
+# 마켓플레이스 이름·설치 위치·플러그인 폴더명을 문서에 박아두면 다른 경로로 설치한
+# 사용자(로컬 clone, 다른 마켓플레이스 이름, 서브모듈 체크아웃)에게는 항상 "없음"이 된다.
+ls "${CLAUDE_PLUGIN_ROOT}/node_modules/puppeteer"
 ```
 
-없으면 안내:
-> "플러그인 의존성을 설치해주세요: cd ~/.claude/plugins/marketplaces/design-polish && npm install"
+없으면 다음을 안내한다 (경로를 직접 적어주지 말 것 — 위 변수를 그대로 쓴다):
+>
+> ```bash
+> cd "${CLAUDE_PLUGIN_ROOT}" && npm install
+> ```
 
 ### 3. Node.js 확인
 
@@ -425,7 +431,13 @@ Read(".design-polish/health-score.json")
     { "id": "DP-S002", "severity": "CRITICAL", "title": "인터랙티브 요소에 포커스 표시 없음 (WCAG 2.4.7)", "count": 3 },
     { "id": "DP-K001", "severity": "HIGH", "title": "한글 텍스트에 serif fallback 폰트 스택", "count": 12 }
   ],
-  "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression", "styleMode": "contract" }
+  "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression", "styleMode": "contract" },
+  "stagnation": { "status": "stagnant", "delta": 1, "spread": 2, "runs": 3, "required": 3, "tolerance": 3, "scores": [75, 74, 76] },
+  "ruleFailureSummary": { "rules": { "CRITICAL": 2, "HIGH": 1, "MEDIUM": 0, "LOW": 0 },
+                          "violations": { "CRITICAL": 9, "HIGH": 12, "MEDIUM": 0, "LOW": 0 },
+                          "totalRules": 3, "totalViolations": 21, "blockingRules": 3, "blockingViolations": 21 },
+  "baseline": { "status": "reused", "reason": "contract unchanged" },
+  "viewports": "desktop,mobile"
 }
 ```
 
@@ -434,7 +446,20 @@ Read(".design-polish/health-score.json")
 
 **Regression 감지**: `health-history.jsonl`의 직전 회차 대비 하락 시 경고. 개선안 도출(5단계)에서 regression 원인 분석 우선 처리.
 
-**정체(stagnation) 판단**: `health-history.jsonl`에서 **동일 `mode`+`route` 라인만 필터링**해 최근 2~3개를 비교하고, 점수 변화 ≤±3이 연속되면 1.9단계 Pivot 권고 근거로 사용합니다. (서로 다른 라우트/측정 모드 라인을 섞으면 점수 상한이 달라 오신호가 나므로 반드시 같은 조건끼리 비교.)
+**정체(stagnation) 판단은 스크립트가 한다 — 직접 계산하지 말 것.**
+capture.cjs가 `health-history.jsonl`에서 **동일 `mode`+`route`+`styleMode`+`viewports` 라인만**
+최신 3회 읽어 `classifyStagnation`으로 판정하고, 결과를 `health-score.json`의 `stagnation`에 싣습니다.
+스킬은 이 값을 **읽어서 인용**만 합니다.
+
+| `stagnation.status` | 의미 |
+|---------------------|------|
+| `insufficient` | 동일 조건 회차가 3회 미만 — **정체라고 말하지 않는다** (`runs`/`required`로 몇 회 모였는지 보고) |
+| `stagnant` | 최근 3회 점수 폭(`spread`)이 dead-band(±3) 이내 — 개선이 멈춤 |
+| `none` | 밴드를 벗어나 움직이는 중 (상승이든 하락이든 정체는 아님) |
+
+- 보고 문구에는 `stagnation.scores`(최신순 3개)와 `delta`를 그대로 인용합니다.
+- 이력 라인을 직접 세어 "2~3회 비슷하니 정체"라고 판단하는 것은 **금지**입니다. 라우트/뷰포트/
+  측정 모드가 섞인 라인을 눈으로 거르다 오신호를 내던 것이 이 판정을 스크립트로 옮긴 이유입니다.
 
 ---
 
@@ -449,33 +474,42 @@ Health Score와 점수 추세를 기반으로 **현재 방향 개선(Refine)** v
 
 ### 판단 기준
 
-| 조건 | 결정 | 행동 |
-|------|------|------|
-| Score ≥ 60 **AND** (첫 실행 또는 이전 대비 상승) | **Refine** | 현재 design-polish 플로우 계속 (2~7단계) |
-| Score < 40 **OR** P1+P2 위반 합계 ≥ 5건 | **Pivot 권고** | 사용자에게 `/design-renewal` 전환 제안 |
-| 40 ≤ Score < 60 | **조건부 판단** | Gap 분석(4단계) 결과까지 확인 후 결정 |
-| 2회 이상 연속 실행 **AND** 점수 변화 ≤ ±3 (정체) | **Pivot 권고** | 점수 정체 → 방향 전환 필요 알림 |
+**모든 입력은 `health-score.json`에서 읽는다. 스킬이 세거나 계산하는 값은 없다.**
+
+| 조건 (읽는 필드) | 결정 | 행동 |
+|------------------|------|------|
+| `score` ≥ 60 **AND** (`regression` 없음 또는 `regression.status != "regression"`) | **Refine** | 현재 design-polish 플로우 계속 (2~7단계) |
+| `score` < 40 **OR** `ruleFailureSummary.blockingViolations` ≥ 5 | **Pivot 권고** | 사용자에게 `/design-renewal` 전환 제안 |
+| 40 ≤ `score` < 60 | **조건부 판단** | Gap 분석(4단계) 결과까지 확인 후 결정 |
+| `stagnation.status == "stagnant"` **AND** `score` < 80 | **Pivot 권고** | 점수 정체 → 방향 전환 필요 알림 (80 이상에서 멈춘 것은 정체가 아니라 **수렴** — Refine 유지) |
+
+> **왜 `blockingViolations`인가 (v2.6.0)**: 예전 기준은 "P1+P2 위반 합계 ≥ 5건"이었는데,
+> P1/P2는 **5단계 개선안 우선순위**다. 즉 Pivot(=5단계로 갈지 말지)을 정하려면 5단계 결과가
+> 먼저 있어야 하는 순환이었고, 실제로는 모델이 그때그때 눈대중으로 세는 값이 됐다.
+> 이제는 스크립트가 `ruleFailures`(결정론적 룰 판정)를 심각도별로 집계한
+> `ruleFailureSummary.blockingViolations`(= CRITICAL + HIGH 위반 건수)를 인용한다.
+> **P1/P2 개수를 세지 말 것.**
 
 ### 판단 흐름
 
 ```
 health-score.json 읽기
     ↓
-Score ≥ 60 + 상승/첫 실행?
+score ≥ 60 + regression 아님/첫 실행?
     ├─ YES → ✅ Refine — "현재 디자인 방향이 양호합니다. 세부 개선을 진행합니다."
     │         → 2단계로 진행
     └─ NO
         ↓
-Score < 40 OR P1+P2 ≥ 5건?
+score < 40 OR ruleFailureSummary.blockingViolations >= 5?
     ├─ YES → 🔄 Pivot 권고
-    │         → "Health Score [X]점, 핵심 위반 [N]건 — 현재 디자인 방향의 근본적 한계가 감지됩니다."
+    │         → "Health Score [score]점, 차단급(CRITICAL+HIGH) 위반 [blockingViolations]건 — 현재 디자인 방향의 근본적 한계가 감지됩니다."
     │         → "💡 `/design-renewal`로 전면 리뉴얼을 권장합니다. 계속 polish하시겠습니까?"
     │         → 사용자 확인 대기
     └─ NO (40~60 구간)
         ↓
-2회+ 연속 AND 정체 (diff ≤ ±3)?
+stagnation.status == "stagnant" AND score < 80?   (insufficient면 이 분기를 타지 않는다; ≥80 정체는 수렴)
     ├─ YES → 🔄 Pivot 권고
-    │         → "2회 이상 polish 후 점수 정체 ([이전]→[현재]) — 개선 한계에 도달한 것으로 보입니다."
+    │         → "최근 [runs]회 점수가 [scores] 로 정체(폭 [spread]) — 개선 한계에 도달한 것으로 보입니다."
     │         → "💡 `/design-renewal`로 방향 전환을 권장합니다."
     │         → 사용자 확인 대기
     └─ NO → ⚠️ 조건부 Refine
@@ -741,6 +775,22 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 **사용 도구**: `Edit`, `Bash`
 
+### 7-0. 적용 전 백업 (fail-closed — 건너뛰지 말 것)
+
+`--apply`는 사용자 코드를 덮어씁니다. **부분 개선이라도 되돌릴 수 없는 변경인 것은 같습니다.**
+(design-renewal에만 백업 절차가 있고 여기에는 없어서, 미커밋 원본이 있는 작업트리에서
+`--apply`가 원본을 지워도 복구 수단이 없던 공백을 v2.6.0에서 닫았습니다.)
+
+```
+Read ${CLAUDE_PLUGIN_ROOT}/knowledge/backup-procedure.md
+```
+
+- `BACKUP_LABEL`은 `design-polish`를 사용합니다 (백업 브랜치 `design-polish-backup`).
+- 4절의 검증에서 백업 지점이 하나도 확보되지 않으면 **파일을 하나도 고치지 않고 중단**합니다.
+  6단계까지의 개선안은 그대로 보고하고, 사용자에게 "커밋 또는 수동 백업 후 재실행"을 안내합니다.
+  분석은 살리고 적용만 막는 것이 fail-closed의 의미입니다.
+- 5절의 롤백 방법을 적용 시작 전에 고지합니다 (8단계 롤백 절차가 이 지점을 사용합니다).
+
 ### 스택 가이드 참조
 
 코드 적용 전, 감지된 기술 스택의 가이드라인을 참조합니다:
@@ -822,7 +872,8 @@ Read(".design-polish/health-score.json") → regression 필드 확인
 ### 하락 시 롤백
 
 1. `health-score.json`의 `breakdown`에서 **어느 항목이 떨어졌는지** 식별 (예: wcagCritical ↓ = 대비 회귀, styleFit ↓ = 값 난립 증가)
-2. 해당 항목을 유발한 변경만 되돌림 (git diff로 방금 적용분 확인 → 문제 변경 revert)
+2. 해당 항목을 유발한 변경만 되돌림 (git diff로 방금 적용분 확인 → 문제 변경 revert).
+   전부 되돌려야 하면 **7-0에서 만든 백업 지점**(`design-polish-backup` 브랜치 / stash / 파일 복사)을 사용
 3. 되돌린 뒤 캡처를 한 번 더 실행해 baseline 수준으로 복귀했는지 확인
 4. 사용자에게 "적용 X건 중 N건이 회귀를 유발해 되돌림" 명시 보고
 

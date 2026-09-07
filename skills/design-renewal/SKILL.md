@@ -2,10 +2,10 @@
 name: design-renewal
 description: 디자인 전면 리뉴얼. 디자인 시스템 교체 수준의 대규모 변경. 색상 팔레트/타이포그래피/컴포넌트/레이아웃 전면 교체. 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "1.4.0"
+version: "2.6.0"
 ---
 
-# 디자인 리뉴얼 스킬 v1.0
+# 디자인 리뉴얼 스킬
 
 디자인 시스템을 전면 교체하는 대규모 리뉴얼 스킬.
 design-polish와 동일한 0~6단계 분석 인프라를 사용하되, 7단계 코드 적용 범위가 디자인 시스템 전체로 확대됩니다.
@@ -281,7 +281,7 @@ close-the-loop(적용 후 검증)가 성립하려면 **전면 적용 전에 동�
 # 리뉴얼 前 현재 디자인의 Health Score를 health-history.jsonl에 남긴다.
 # ★적용 후 재캡처(8단계)와 반드시 동일한 플래그·동일 cwd로 실행★ — mode(full/no-wcag)와
 #   primaryRoute가 일치해야 readPreviousScore가 같은 baseline을 선택한다.
-node scripts/capture.cjs   # design-polish 1.8단계와 동일 호출 (BASE_URL 등 환경변수 동일)
+node "${CLAUDE_PLUGIN_ROOT}/scripts/capture.cjs"   # design-polish 1.8단계와 동일 호출 (BASE_URL 등 환경변수 동일)
 ```
 
 - **동일 플래그 원칙**: 서버가 떠 있어 WCAG까지 도는 조건(`full`)으로 baseline을 남겼으면, 8단계 재캡처도 같은 조건으로 돌린다. baseline을 `--no-wcag`로 남기고 적용 후 `full`로 재면 mode 불일치로 비교가 무효가 된다(H1 방지 배선).
@@ -298,52 +298,21 @@ node scripts/capture.cjs   # design-polish 1.8단계와 동일 호출 (BASE_URL 
 
 ### 적용 전 백업 (baseline 캡처 직후)
 
-전면 교체는 **커밋되지 않은 원본까지 유실**시킬 수 있으므로, 브랜치 하나만으로는 부족합니다. 다음 순서를 **강제**합니다:
+전면 교체는 **커밋되지 않은 원본까지 유실**시킬 수 있으므로, 브랜치 하나만으로는 부족합니다.
+절차는 `--apply`를 가진 모든 스킬이 공유하므로 **공용 문서 한 곳**에 있습니다:
 
-```bash
-# 1) git 저장소 여부 확인
-git rev-parse --is-inside-work-tree 2>/dev/null
+```
+Read ${CLAUDE_PLUGIN_ROOT}/knowledge/backup-procedure.md
 ```
 
-**git 저장소인 경우:**
-
-```bash
-# 2) 작업트리 상태 확인
-git status --porcelain
-```
-
-- **깨끗함(출력 없음)**: HEAD가 곧 원본 → 아래 3)에서 브랜치 스냅샷으로 충분.
-- **미커밋 변경 있음**: 브랜치는 HEAD만 담고 미커밋 원본을 보호하지 못한다. 스냅샷을 **먼저** 남긴다:
-  ```bash
-  # 추적 중인 미커밋 변경(modified/staged)의 스냅샷 커밋 오브젝트 (브랜치/인덱스 미변경)
-  STASH=$(git stash create "design-renewal pre-apply snapshot")
-  # STASH가 비어있으면(=추적 변경 없음) 아무것도 안 만들어진다.
-  # 생성됐다면 GC로 사라지지 않도록 즉시 참조로 고정하고 사용자에게 롤백 지점으로 고지:
-  [ -n "$STASH" ] && git stash store -m "design-renewal pre-apply" "$STASH"
-  ```
-  > **⚠️ `git stash create`는 추적(tracked) 파일만 담는다** — untracked/ignored 원본은 포함되지 않고, 커밋 오브젝트는 참조가 없으면 GC 대상이다(그래서 위에서 `git stash store`로 고정). 따라서 **변경 예정 파일 중 untracked인 원본이 있으면**, 아래 non-git 절차의 파일 복사 백업(`.design-polish/renewal-backup/<타임스탬프>/`)을 **반드시 병행**한다. 추적 파일만 있고 stash가 정상 생성됐어도, 확실히 하려면 파일 복사 백업을 함께 두는 편이 안전하다.
-
-```bash
-# 3) 백업 브랜치 — 기존 백업을 파괴하지 않도록 -f 금지. 존재하면 타임스탬프 접미사로 신규 생성
-if git show-ref --verify --quiet refs/heads/design-renewal-backup; then
-  git branch "design-renewal-backup-$(date +%Y%m%d-%H%M%S)"   # 과거 롤백 지점 보존
-else
-  git branch design-renewal-backup
-fi
-```
-
-> **`git branch -f`를 쓰지 않는다**: 이전 리뉴얼의 백업 브랜치를 현재 HEAD로 강제 이동시켜 과거 롤백 지점을 파괴한다(반복 리뉴얼 시 데이터 유실 풋건).
-
-**git 저장소가 아닌 경우:** 변경 예정 파일을 `.design-polish/renewal-backup/<타임스탬프>/`에 복사 백업하고, 그 경로를 사용자에게 고지합니다.
-
-**롤백 방법 고지** (적용 시작 전 사용자에게 명시):
-- 커밋 상태였던 파일: `git restore --source=design-renewal-backup -- <경로>`
-- 미커밋(추적) 원본: `git stash store`로 고정한 스냅샷에서 복원 — `git stash list`로 확인 후 `git checkout <snapshot-hash> -- <경로>`.
-- untracked였던 원본: stash에 없으므로 **파일 복사 백업**(`.design-polish/renewal-backup/<타임스탬프>/`)에서만 복원 가능.
+- `BACKUP_LABEL`은 `design-renewal`을 사용합니다 (백업 브랜치 `design-renewal-backup`).
+- **fail-closed**: 4절의 검증에서 백업 지점이 하나도 확보되지 않으면 **7단계 적용을 진행하지 않습니다.**
+  이미 확정된 리뉴얼 설계와 변경 파일 목록은 그대로 보고하고, 코드 수정만 중단합니다.
+- 5절의 롤백 방법을 적용 시작 전에 사용자에게 고지합니다.
 
 ### 적용 후 검증 루프 (close-the-loop)
 
-design-polish SKILL의 **8단계(close-the-loop)** 를 그대로 따릅니다: 전면 적용 후 캡처를 **"적용 전 baseline 캡처"와 동일한 플래그로** 재실행하여 `health-score.json`의 regression을 확인하고, `regression`이 하락(diff < 0)이면 백업 지점으로 롤백을 검토합니다. `regression`이 `null`이면 baseline 캡처가 누락됐거나 mode/route/styleMode가 어긋난 것이므로 점수 판정 대신 백업 기반 수동 검토로 전환합니다. before/after 점수를 반드시 함께 보고합니다.
+design-polish SKILL의 **8단계(close-the-loop)** 를 그대로 따릅니다: 전면 적용 후 캡처를 **"적용 전 baseline 캡처"와 동일한 플래그로** 재실행하여 `health-score.json`의 regression을 확인하고, `regression.status`가 `"regression"`이면 백업 지점으로 롤백을 검토합니다. **`diff < 0`으로 직접 판단하지 마십시오** — 회귀 판정에는 dead-band(±3)가 걸려 있어 `diff = -2`는 `status: "unchanged"`(계측 지터)로 흡수됩니다. 스크립트가 이미 계산해 둔 `status`를 인용해야 "좋은 변경을 지터 때문에 롤백"하는 오판이 생기지 않습니다. (`improved`/`unchanged`는 롤백하지 않음) `regression`이 `null`이면 baseline 캡처가 누락됐거나 mode/route/styleMode가 어긋난 것이므로 점수 판정 대신 백업 기반 수동 검토로 전환합니다. before/after 점수를 반드시 함께 보고합니다.
 
 **계약 준수 검증 (v2.5.0)** — 점수와 별개로 재캡처 결과의 `tokenDrift.newViolationCount`를 확인합니다.
 
