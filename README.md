@@ -1,4 +1,4 @@
-# design-polish v2.7
+# design-polish v2.8
 
 Claude Code plugin for design intelligence-driven polishing.
 Combines built-in design knowledge base + visual comparison + WCAG accessibility checks + trend search.
@@ -16,6 +16,42 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 - **9-Level Priority System** — P0 (new contract violations) to P8 (LOW) improvements
 - **Auto-Apply** — Code improvements with `--apply`, gated behind a mandatory backup (fail-closed)
 - **Screenshot to Code** — `/design-from-screenshot` turns an image into framework code, constrained by the design contract when one exists
+
+### Craft floor (v2.8.0)
+
+Adapted from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) (Apache-2.0). The lint code is new and
+takes only thresholds from the source. Most of `knowledge/craft-floor.md` is a Korean translation of the source's
+reference lists, reworked into rule IDs with severities, so that file is distributed under Apache-2.0.
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for what was taken and what changed.
+
+- **Readability lint (`DP-R001`–`R008`)** — line length over 85 characters, tight leading, justified narrow
+  columns, long uppercase runs, wide tracking, body text under 12px, skipped heading levels, and a flat type
+  scale (adjacent steps under 1.25×). Measured from computed styles in `collectCraftMetrics`, judged by
+  `scripts/craft-lint.cjs`.
+- **Pattern lint (`DP-P001`–`P004`)** — gradient text, a one-side accent stripe on a rounded box, cards nested
+  in cards, and bounce/elastic easing.
+- **Report-only by design** — every `DP-R`/`DP-P` rule is MEDIUM or LOW. They appear in `ruleFailures[]` but do
+  not touch the Health Score or the Pivot threshold (`blockingNewViolations` counts CRITICAL+HIGH only).
+- **Rule waivers** — `ruleWaivers: [{ rule, decision, reason }]` in `design-decisions.json` exempts a `DP-R`/`DP-P`
+  rule when a recorded decision (`DD-NNN`) chose it on purpose. `DP-T/K/S` cannot be waived. Invalid entries
+  (unknown rule, undeclared decision, reason under 10 characters) are never applied silently; they are listed in
+  `ruleWaivers.invalid` and printed. Waivers live outside `tokens`, so editing them does not refreeze the
+  token baseline.
+- **Craft floor (`knowledge/craft-floor.md`, `DP-F###`)** — model-judged rows: a render check (`DP-F1xx`,
+  including browser default surfaces such as `::selection` and `caret-color`), a refuse list of default
+  patterns (`DP-F2xx`), and a cognitive-load checklist (`DP-F3xx`). Also: surface modes
+  (Operate / Persuade / Experience), "polish is refinement, not concealed redesign", drift classification
+  before fixing, and two new report sections ("recurring patterns", "what is working").
+- **Not adopted: a second score** — impeccable's 0–4 heuristic scores were left out. The Health Score already
+  exists, and a model-assigned score drifts run to run and would pollute regression history. Nielsen's ten
+  heuristics are kept as a review lens only.
+
+Upgrade note: the new rules surface issues that already existed. A project that was clean on v2.7.0 may show
+new MEDIUM/LOW findings on v2.8.0 with an unchanged Health Score; that is expected.
+
+Limits: element caps (`CRAFT_CAPS`) were exercised on synthetic fixtures, not on a very large production page.
+When a cap is hit, `readability.measurement` / `slopPatterns.measurement` is `incomplete` and "no findings"
+must not be read as "clean".
 
 ### Honest failure signals (v2.7.0)
 
@@ -99,7 +135,8 @@ plugins/design-polish/
 │   ├── industry-rules.md         # 20 service type UI reasoning rules
 │   ├── component-checklist.md    # 6 component Do/Don't checklists
 │   ├── ux-rules.md               # 52 UX rules across 6 categories (DP-U###)
-│   ├── failure-rules.md          # Rule ID registry (DP-T/K/S/A/U/C) + severity scale
+│   ├── failure-rules.md          # Rule ID registry (DP-T/K/S/R/P/A/U/C/F) + severity scale + waivers
+│   ├── craft-floor.md            # Craft floor: surface modes, render check, refuse list (DP-F###)
 │   └── backup-procedure.md       # Shared pre-apply backup procedure (fail-closed)
 ├── data/                         # JSON — BM25 searchable
 │   ├── styles.json               # design styles
@@ -108,7 +145,8 @@ plugins/design-polish/
 │   └── stacks.json               # tech stack guides
 ├── scripts/
 │   ├── capture.cjs               # Puppeteer screenshot + axe-core
-│   ├── design-contract.cjs       # Contract loading + pure lint (token drift / ko typo / state)
+│   ├── design-contract.cjs       # Contract loading + pure lint (token drift / ko typo / state) + waivers
+│   ├── craft-lint.cjs            # Pure readability (DP-R) + pattern (DP-P) lint
 │   └── search.cjs                # BM25 search engine (Node.js)
 ├── skills/
 │   ├── design-polish/
@@ -127,8 +165,10 @@ plugins/design-polish/
 ├── tests/                        # unit tests (npm test) — pure scorers, lints, search
 │   ├── scoring.test.cjs          # health score, regression, stagnation, history selection
 │   ├── contract.test.cjs         # token drift, ratchet, ko typography, state contract
+│   ├── craft.test.cjs            # readability + pattern lint, waivers, rule registry sync
 │   └── search.test.cjs           # tokenizer (incl. Korean) + BM25 determinism
 ├── package.json
+├── THIRD_PARTY_NOTICES.md        # impeccable attribution + Apache-2.0 text
 └── README.md
 ```
 
@@ -274,10 +314,14 @@ Severity is a 4-level scale — `CRITICAL > HIGH > MEDIUM > LOW` — single-sour
 | P2 | Touch/Interaction | CRITICAL | `DP-S001`, `DP-S003`, touch targets |
 | P3 | Performance | HIGH | FCP, request count, transfer size |
 | P4 | Layout/Responsive | HIGH | CLS, viewport breakage |
-| P5 | Typography/Color | MEDIUM | `DP-K001..003`, `DP-T002`, `DP-T004` |
-| P6 | Animation | MEDIUM | `DP-U6xx` |
-| P7 | Style Fit | MEDIUM | `DP-T001`, `DP-T003`, `DP-T005` |
+| P5 | Typography/Color | MEDIUM | `DP-K001..003`, `DP-T002`, `DP-T004`, `DP-R001..008` |
+| P6 | Animation | MEDIUM | `DP-U6xx`, `DP-P004` |
+| P7 | Style Fit | MEDIUM | `DP-T001`, `DP-T003`, `DP-T005`, `DP-P001..003` |
 | P8 | Charts/Data | LOW | `DP-C` checklist items |
+
+The priority tier is a category placement, not a severity. A rule keeps the severity `RULES` gives it wherever it
+lands: `DP-K001` stays HIGH inside P5, and the report-only `DP-R`/`DP-P` rules stay MEDIUM/LOW inside P5–P7.
+Model-judged `DP-F` rows take the default severity column in `knowledge/craft-floor.md`.
 
 P0 sits above accessibility because a *new* contract violation is the one class of finding that is both certainly
 regressive and cheap to revert — it was introduced by the change under review. Pre-existing violations stay frozen
@@ -302,6 +346,7 @@ in the baseline and never reach P0.
 ├── design-decisions.json       # design contract — machine-checked allowed tokens
 ├── token-baseline.json         # ratchet freeze (carries the contractHash it was taken against)
 ├── health-score.json           # score + breakdown + regression + stagnation + ruleFailureSummary + metrics
+│                               #   + readability / slopPatterns / ruleWaivers (v2.8.0)
 ├── health-history.jsonl        # append-only history (mode / route / styleMode / viewports tagged)
 ├── screenshots/
 │   ├── current-main.png
@@ -343,6 +388,10 @@ can tell "nothing was attempted" from "everything attempted passed".
 
 Design knowledge is adapted from [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) (MIT License), converted from CSV/Python to JSON/Node.js for zero-dependency integration.
 
+The craft floor (`knowledge/craft-floor.md`) is adapted from [pbakaus/impeccable](https://github.com/pbakaus/impeccable)
+(Apache-2.0) and stays under that license. Some `DP-R`/`DP-P` thresholds come from the same source; the lint code
+is new. Details and the license text are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## License
 
-MIT
+MIT, except `knowledge/craft-floor.md`, which is Apache-2.0 (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).

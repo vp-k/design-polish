@@ -2,7 +2,7 @@
 name: design-polish
 description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 스타일/색상/타이포 BM25 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.7.0"
+version: "2.8.0"
 ---
 
 # 디자인 폴리싱 스킬
@@ -10,7 +10,7 @@ version: "2.7.0"
 디자인 지식 기반(서비스 유형별 규칙, 컴포넌트 체크리스트, UX 규칙) + 실시간 시각 비교(Puppeteer 스크린샷) + WCAG 자동 검사(axe-core) + 트렌드 검색(WebSearch) 통합 폴리싱.
 
 ### 지식 기반 리소스
-- **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙 (마크다운 직접 Read)
+- **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙, 장인 기준선 (마크다운 직접 Read)
 - **data/**: 디자인 스타일 / 색상 팔레트 / 타이포그래피 / 기술 스택 가이드 (JSON + BM25 검색). 정확한 건수는 문서에 박지 말고 `node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --help` 출력을 인용한다 — 데이터가 늘어도 문서가 거짓말하지 않는다.
 - **scripts/search.cjs**: Node.js BM25 검색 엔진
 
@@ -337,7 +337,17 @@ Read("${CLAUDE_PLUGIN_ROOT}/knowledge/industry-rules.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/component-checklist.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/ux-rules.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/failure-rules.md")
+Read("${CLAUDE_PLUGIN_ROOT}/knowledge/craft-floor.md")
 ```
+
+> `craft-floor.md`는 **장인 기준선**이다 (v2.8.0). 렌더 점검(DP-F1xx), 거부 목록(DP-F2xx),
+> 인지 부하(DP-F3xx), 폴리시의 의미, 드리프트 분류, 수정 순서를 담는다.
+> 우선순위는 사용자 지시 > 디자인 계약 > 기준선이다. 계약이 고른 것은 거부 목록에 있어도 지적하지 않는다.
+
+### 표면 모드 판정
+
+`craft-floor.md` 0절에 따라 라우트마다 **Operate / Persuade / Experience** 중 하나로 정한다.
+모드는 2~3단계 레퍼런스 선택과 4단계 Gap 분석의 표현 수위를 바꾼다. 6단계 프로젝트 요약에 모드와 근거를 한 줄로 적는다.
 
 > `failure-rules.md`는 **규칙 ID 레지스트리**다. 리포트에서 문제를 지적할 때는
 > 반드시 ID를 인용한다 — `DP-U609 위반: focus ring 제거됨 (Button.tsx:24)`.
@@ -429,14 +439,24 @@ Read(".design-polish/health-score.json")
     { "id": "DP-T002", "severity": "CRITICAL", "title": "색상이 디자인 계약 팔레트 밖의 값", "count": 6, "newCount": 2,
       "samples": [{ "value": "#3B82F6", "selector": "section.hero > button.cta" }] },
     { "id": "DP-S002", "severity": "CRITICAL", "title": "인터랙티브 요소에 포커스 표시 없음 (WCAG 2.4.7)", "count": 3 },
-    { "id": "DP-K001", "severity": "HIGH", "title": "한글 텍스트에 serif fallback 폰트 스택", "count": 12 }
+    { "id": "DP-K001", "severity": "HIGH", "title": "한글 텍스트에 serif fallback 폰트 스택", "count": 12 },
+    { "id": "DP-R001", "severity": "MEDIUM", "title": "본문 한 줄이 너무 길다 (85자 초과 줄이 2줄 이상)", "count": 2,
+      "samples": [{ "selector": "main > article > p", "detail": "약 92자/줄 (3줄이 85자 초과)" }] }
   ],
+  "readability": { "enabled": true, "scanned": 412, "textSamples": 160, "measurement": "complete",
+                   "typeScale": { "roles": { "h1": 40, "h2": 28, "body": 16 }, "dropped": [], "steps": [1.43, 1.75], "maxStep": 1.75,
+                                  "flat": false, "skipped": null, "weightSeparated": true },
+                   "findings": ["…DP-R…"], "info": [], "waived": [] },
+  "slopPatterns": { "enabled": true, "scanned": 412, "measurement": "complete", "findings": ["…DP-P…"],
+                    "waived": [{ "id": "DP-P001", "count": 1, "decision": "DD-030", "reason": "브랜드 헤드라인은 그라디언트 텍스트로 결정했다" }] },
+  "ruleWaivers": { "active": ["…계약의 유효한 면제…"], "invalid": [{ "entry": { "rule": "DP-T001" }, "reason": "not waivable: DP-T001" }],
+                   "applied": ["…실제로 finding을 옮긴 면제…"] },
   "regression": { "previousScore": 80, "currentScore": 75, "diff": -5, "status": "regression", "styleMode": "contract" },
   "stagnation": { "status": "stagnant", "delta": -1, "spread": 2, "runs": 3, "window": 3, "required": 3, "tolerance": 3, "scores": [75, 74, 76] },
-  "ruleFailureSummary": { "rules": { "CRITICAL": 2, "HIGH": 1, "MEDIUM": 0, "LOW": 0 },
-                          "violations": { "CRITICAL": 9, "HIGH": 12, "MEDIUM": 0, "LOW": 0 },
-                          "actionable": { "CRITICAL": 5, "HIGH": 12, "MEDIUM": 0, "LOW": 0 },
-                          "totalRules": 3, "totalViolations": 21, "totalActionableViolations": 17,
+  "ruleFailureSummary": { "rules": { "CRITICAL": 2, "HIGH": 1, "MEDIUM": 1, "LOW": 0 },
+                          "violations": { "CRITICAL": 9, "HIGH": 12, "MEDIUM": 2, "LOW": 0 },
+                          "actionable": { "CRITICAL": 5, "HIGH": 12, "MEDIUM": 2, "LOW": 0 },
+                          "totalRules": 4, "totalViolations": 23, "totalActionableViolations": 19,
                           "blockingRules": 3, "blockingViolations": 21, "blockingNewViolations": 17 },
   "baseline": { "status": "reused", "reason": "contract unchanged" },
   "viewports": "desktop,mobile,tablet"
@@ -450,6 +470,10 @@ Read(".design-polish/health-score.json")
 
 **`ruleFailures[]`는 스크립트가 결정론적으로 판정한 결과다.** 심각도를 재해석하거나 임의로 누락하지 않고
 5·6단계 개선안에 **그대로** 옮긴다. 신규 토큰 위반(`newCount > 0`)은 CRITICAL로 승격되어 항상 최상단에 온다.
+
+**`readability`·`slopPatterns` (v2.8.0)** 은 DP-R·DP-P의 계측 원본이다. `measurement`가 `incomplete`이면
+요소 상한에 닿아 일부만 쟀다는 뜻이므로 "위반 없음"이라고 단정하지 않는다.
+`ruleWaivers.invalid`가 비어 있지 않으면 계약의 면제 항목이 잘못된 것이다. 사유를 리포트에 그대로 옮긴다.
 
 **Regression 감지**: `health-history.jsonl`의 직전 회차 대비 하락 시 경고. 개선안 도출(5단계)에서 regression 원인 분석 우선 처리.
 
@@ -557,6 +581,9 @@ stagnation.status == "stagnant" AND score < 80?   (insufficient면 이 분기를
 - Gap 항목 중 **5개 이상이 "불일치"** 또는 **"대폭 변경 필요"**
 - 서비스 유형 적합성이 **"불일치"**
 - 스타일 매칭이 현재 디자인과 **근본적으로 다른 방향**을 제시
+
+> **폴리시는 다듬기이지 숨은 재설계가 아니다** (`craft-floor.md` 3절). 점수와 무관하게
+> 개념 자체가 틀렸다고 판단되면 Refine 안에서 몰래 바꾸지 않는다. 그 판단을 말하고 Pivot을 권고한다.
 
 ---
 
@@ -678,18 +705,35 @@ Read(".design-polish/screenshots/reference-hero.png")
 | **P8** | 차트/데이터 | LOW | 차트 접근성, 데이터 시각화 개선 |
 
 각 개선안에는 다음 정보를 포함합니다:
-- **규칙 ID** (`DP-T/K/S/U/C` 또는 axe rule id) — 필수. ID 없는 서술형 지적은 넣지 않는다
+- **규칙 ID** (`DP-T/K/S/R/P/U/C/F` 또는 axe rule id) — 필수. ID 없는 서술형 지적은 넣지 않는다
 - 대상 파일 경로 또는 CSS 선택자
 - 구체적인 변경 내용
 - 참조 근거 (계약의 결정 ID `DD-NNN`, knowledge 파일, search.cjs 결과, WCAG 기준 등)
 
 **자동 판정 규칙(`ruleFailures[]`)과 모델 판단 규칙을 섞지 않는다.**
 자동 규칙은 `health-score.json`에서 그대로 옮기고, 모델 판단으로 추가하는 항목은
-`ux-rules.md`/`component-checklist.md`의 행 ID를 인용한다.
+`ux-rules.md`/`component-checklist.md`/`craft-floor.md`의 행 ID를 인용한다.
 
 **계약이 있는데 계약 밖 값을 제안하려는 경우**, 그것은 개선안이 아니라 계약 변경이다.
 개선안 목록에 넣지 말고 별도 "계약 변경 제안" 항목으로 분리해
 어떤 `DD-NNN`을 왜 바꿔야 하는지 적고 사용자 확인을 받는다.
+
+**고치기 전에 드리프트 원인을 분류한다** (`craft-floor.md` 4절): 토큰 누락 / 일회성 구현 / 개념 불일치 / 국소 결함.
+토큰 누락은 위의 "계약 변경 제안"으로 간다. 개념 불일치는 사용자 확인을 받는다.
+같은 우선순위 안의 정렬은 `craft-floor.md` 5절 순서를 따른다.
+
+**DP-R(가독성)·DP-P(상투 패턴)는 보고 전용이다** (v2.8.0). 심각도는 MEDIUM·LOW뿐이고
+Health Score와 Pivot 판정(`blockingNewViolations`)에 들어가지 않는다.
+P 단계는 카테고리 배치일 뿐이다. 심각도는 `ruleFailures[]` 값을 그대로 적는다 (DP-K001이 HIGH인 채로 P5에 있는 것과 같다).
+
+| 규칙 | 배치 |
+|------|------|
+| DP-R001~R008 | P5 타이포 |
+| DP-P004 | P6 애니메이션 |
+| DP-P001~P003 | P7 스타일 적합성 |
+
+계약의 `ruleWaivers`로 면제된 항목은 `ruleFailures[]`에 없다. 개선안으로 되살리지 않는다.
+모델 판단 `DP-F` 행은 `craft-floor.md`의 기본 심각도를 그대로 쓴다.
 
 ---
 
@@ -702,6 +746,7 @@ Read(".design-polish/screenshots/reference-hero.png")
 
 [프레임워크], [스타일링 방식] 기반 [프로젝트 유형]
 감지된 서비스 유형: [서비스 유형명]
+표면 모드: [Operate | Persuade | Experience] — [판정 근거 한 줄]
 
 ## WCAG 접근성 체크
 
@@ -763,6 +808,18 @@ Read(".design-polish/screenshots/reference-hero.png")
 | CRITICAL | DP-T002 (DD-009) | 계약 팔레트 밖 색상 | 6 (신규 2) | `section.hero > button.cta` — #3B82F6 |
 | CRITICAL | DP-S002 | 포커스 표시 없음 | 3 | `div[role=button].menu` |
 | HIGH | DP-K001 | 한글 serif fallback | 12 | `article > p` — Inter, serif |
+| MEDIUM | DP-R001 | 본문 한 줄이 85자 초과 | 2 | `main > article > p` — 약 92자/줄 |
+
+면제됨: DP-P001 (DD-030) — `health-score.json`의 `ruleWaivers.applied`. 무효 면제가 있으면 `ruleWaivers.invalid` 사유를 함께 적는다.
+
+## 인지 부하 (craft-floor 7절)
+등급: [낮음 | 보통 | 높음] — 실패 [DP-F302, DP-F306]
+
+## 반복 패턴 (시스템 결함)
+- [원인 하나] — [분류: 토큰 누락 | 일회성 구현 | 개념 불일치 | 국소 결함] ([규칙 ID], [N곳])
+
+## 잘 되고 있는 것
+- [유지·복제할 관행 2~3개 — 7단계에서 건드리지 않는다]
 
 ## 개선안 (우선순위)
 
@@ -840,6 +897,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 - 새 라이브러리 설치 필요한 변경
 - 대규모 구조 변경 (리팩토링 수준)
 - 브레이킹 체인지
+- 6단계 "잘 되고 있는 것"에 적은 부분
+- 기존 시각 세계를 바꾸는 변경 — 다듬기를 넘어서면 Pivot으로 넘긴다 (`craft-floor.md` 3절)
 
 ### 적용 결과 출력
 
@@ -955,6 +1014,8 @@ Read(".design-polish/health-score.json") → regression 필드 확인
 ### 시각 품질
 - [ ] 색상 대비 4.5:1 이상 (WCAG AA)
 - [ ] 폰트 계층 명확 (h1 > h2 > h3 > body > caption)
+- [ ] 브라우저 기본 표면을 팔레트로 지정 — 선택색·캐럿·포커스 링·밑줄 오프셋·표 숫자 (DP-F107)
+- [ ] 거부 목록(DP-F2xx) 항목이 계약 근거 없이 남아 있지 않음
 
 **아래 두 항목은 `heuristic` 모드(계약 없음) 한정입니다** — `styleMode`가 `contract`이면
 계약이 허용한 토큰이 정답이므로, 여기 적힌 예시 스케일이 아니라

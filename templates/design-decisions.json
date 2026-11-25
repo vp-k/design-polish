@@ -77,5 +77,8 @@
         "rgba(0, 0, 0, 0.08) 0px 4px 12px 0px"
       ]
     }
-  }
+  },
+
+  "$ruleWaiversComment": "가독성(DP-R)·상투 패턴(DP-P) 규칙을 의도적으로 어길 때만 쓴다. 항목 형식: {\"rule\": \"DP-P001\", \"decision\": \"DD-0xx\", \"reason\": \"10자 이상의 이유\"}. decision은 위 decisions에 있는 ID여야 한다. DP-T/K/S는 면제할 수 없다. 무효 항목은 무시되고 캡처 출력에 경고로 남는다. tokens 밖에 있으므로 바꿔도 토큰 baseline이 재동결되지 않는다. 자세한 조건은 knowledge/failure-rules.md '규칙 면제' 절.",
+  "ruleWaivers": []
 }

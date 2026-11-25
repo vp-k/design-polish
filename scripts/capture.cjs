@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const contractLib = require('./design-contract.cjs');
+const craftLib = require('./craft-lint.cjs');
 
 // ============================================
 // 유틸리티
@@ -687,6 +688,353 @@ async function collectKoreanTypography(page) {
   }
 }
 
+// 가독성(DP-R)·AI 상투 패턴(DP-P) 원자료 수집 — 읽기 전용 DOM 순회 1회 (v2.8.0).
+// 판정은 craft-lint.cjs의 순수 함수가 담당한다. DOM·스크롤·포커스를 바꾸지 않는다.
+// 상한에 닿으면 capped=true → 린트가 measurement: "incomplete"로 정직하게 표기한다.
+const CRAFT_CAPS = Object.freeze({
+  elements: 8000,  // 순회할 요소 수
+  text: 1500,      // 텍스트 블록 샘플
+  boxes: 400,      // 카드 후보 박스 (DP-P003)
+  borders: 400,    // 한쪽 테두리 후보 (DP-P002)
+  gradients: 100,  // 그라디언트 텍스트 후보 (DP-P001)
+  headings: 300,
+  distinct: 200,   // 이징·애니메이션 이름 고유값
+});
+
+async function collectCraftMetrics(page, caps = CRAFT_CAPS) {
+  try {
+    return await page.evaluate((caps) => {
+      const cssPath = (el) => {
+        if (!el || !el.tagName) return '';
+        const parts = [];
+        let node = el, depth = 0;
+        while (node && node.nodeType === 1 && depth < 4) {
+          let seg = node.tagName.toLowerCase();
+          if (node.id) { parts.unshift(`${seg}#${node.id}`); break; }
+          const cls = (typeof node.className === 'string' ? node.className : '')
+            .trim().split(/\s+/).filter(Boolean).slice(0, 2);
+          if (cls.length) seg += '.' + cls.join('.');
+          parts.unshift(seg);
+          node = node.parentElement;
+          depth++;
+        }
+        return parts.join(' > ').slice(0, 120);
+      };
+      const px = (v) => {
+        const n = parseFloat(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const alphaOf = (color) => {
+        const s = String(color || '');
+        if (s === 'transparent') return 0;
+        const m = /rgba?\(([^)]*)\)/i.exec(s);
+        if (!m) return 1;
+        const parts = m[1].split(/[\s,/]+/).filter(Boolean);
+        if (parts.length < 4) return 1;
+        const a = parts[3].endsWith('%') ? parseFloat(parts[3]) / 100 : parseFloat(parts[3]);
+        return Number.isFinite(a) ? a : 1;
+      };
+      const classChain = (node, depth) => {
+        let s = '';
+        for (let i = 0; node && node.nodeType === 1 && i < depth; i++, node = node.parentElement) {
+          s += ' ' + (typeof node.className === 'string' ? node.className : '');
+        }
+        return s;
+      };
+
+      // 텍스트 블록 경계 — inline/contents가 아닌 요소는 자기 블록을 이룬다
+      const INLINE = new Set(['inline', 'contents']);
+      // 내부 텍스트를 본문으로 보지 않는 요소
+      const OPAQUE = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'MATH', 'TEXTAREA', 'SELECT',
+        'IFRAME', 'CANVAS', 'VIDEO', 'AUDIO', 'OBJECT']);
+      const UI_SEL = 'button, a, label, summary, select, option, nav, footer, [role="button"], [role="link"], '
+        + '[role="tab"], [role="menuitem"], [role="navigation"], [role="status"], [role="tooltip"], [aria-hidden="true"]';
+      const UI_CLASS = /(^|[\s_-])(badges?|chips?|pills?|tags?|labels?|meta|eyebrow|kicker|breadcrumbs?)($|[\s_-])/i;
+      const FINE_CLASS = /legal|copyright|disclaimer|footnote|fine-?print/i;
+      const STATE_CLASS = /(^|[\s_-])(active|selected|current|checked)($|[\s_-])/i;
+      const MONO = /monospace|\bmono\b|consolas|courier|menlo|monaco/i;
+      const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="button"], [role="link"], '
+        + '[role="tab"], [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"], [role="switch"]';
+      const POPUP = 'dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], [popover]';
+
+      const styles = new Map();
+      const styleOf = (el) => {
+        let cs = styles.get(el);
+        if (!cs) { cs = getComputedStyle(el); styles.set(el, cs); }
+        return cs;
+      };
+      const bgCache = new Map();
+      const effectiveBg = (node) => {
+        const chain = [];
+        let found = 'rgb(255, 255, 255)';
+        for (let n = node; n && n.nodeType === 1; n = n.parentElement) {
+          if (bgCache.has(n)) { found = bgCache.get(n); break; }
+          chain.push(n);
+          const c = styleOf(n).backgroundColor;
+          if (alphaOf(c) > 0.05) { found = c; break; }
+        }
+        for (const n of chain) bgCache.set(n, found);
+        return found;
+      };
+
+      // 블록에 속한 텍스트 노드 — 하위 블록(자기 블록을 이루는 요소)의 텍스트는 그 블록 몫이다
+      const textNodesOf = (block) => {
+        const walker = document.createTreeWalker(block, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+          acceptNode(n) {
+            if (n.nodeType === 3) return NodeFilter.FILTER_ACCEPT;
+            if (OPAQUE.has(n.tagName.toUpperCase())) return NodeFilter.FILTER_REJECT;
+            const d = styleOf(n).display;
+            if (d === 'none' || !INLINE.has(d)) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_SKIP;
+          },
+        });
+        const out = [];
+        let n;
+        while ((n = walker.nextNode())) out.push(n);
+        return out;
+      };
+
+      // 텍스트 조각 사각형을 줄 단위로 합친다 — 세로로 절반 이상 겹치면 같은 줄
+      const mergeLines = (rects) => {
+        rects.sort((a, b) => (a.top - b.top) || (a.left - b.left));
+        const lines = [];
+        for (const r of rects) {
+          const last = lines[lines.length - 1];
+          if (last) {
+            const overlap = Math.min(last.bottom, r.bottom) - Math.max(last.top, r.top);
+            if (overlap > 0.5 * Math.min(last.bottom - last.top, r.bottom - r.top)) {
+              last.left = Math.min(last.left, r.left);
+              last.right = Math.max(last.right, r.right);
+              last.top = Math.min(last.top, r.top);
+              last.bottom = Math.max(last.bottom, r.bottom);
+              continue;
+            }
+          }
+          lines.push({ top: r.top, bottom: r.bottom, left: r.left, right: r.right });
+        }
+        return lines.map(l => Math.round(l.right - l.left));
+      };
+
+      const all = Array.from(document.querySelectorAll('body *'));
+      const capped = { elements: all.length > caps.elements, text: false, boxes: false, borders: false, gradients: false };
+      const els = all.slice(0, caps.elements);
+
+      const text = [];
+      const scaleMap = new Map();
+      const gradientText = [];
+      const borders = [];
+      const boxes = [];
+      const boxIndex = new Map();
+      const motionMap = new Map();
+      const animMap = new Map();
+      const addDist = (map, value, el) => {
+        if (!value) return;
+        const cur = map.get(value);
+        if (cur) { cur.count++; return; }
+        if (map.size >= caps.distinct) return;
+        map.set(value, { count: 1, sample: cssPath(el) });
+      };
+      let scanned = 0;
+
+      for (const el of els) {
+        const tagU = el.tagName.toUpperCase();
+        if (OPAQUE.has(tagU)) continue;
+        const cs = styleOf(el);
+        const display = cs.display;
+        if (display === 'none') continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        if (cs.visibility === 'hidden' || parseFloat(cs.opacity) === 0) continue;
+        scanned++;
+        const block = !INLINE.has(display);
+
+        // ── 텍스트 블록 (DP-R001~R006, R008)
+        // 화면 낭독기 전용 텍스트(1px 클립)는 줄 배치가 의미 없으므로 뺀다
+        const srOnly = rect.width < 8 || rect.height < 8 || (cs.clip && cs.clip !== 'auto')
+          || /inset\(50%\)/.test(cs.clipPath || '');
+        if (block && !srOnly) {
+          if (text.length >= caps.text) {
+            capped.text = true;
+          } else {
+            let chars = 0, spaces = 0, latin = 0;
+            const bySource = new Map();
+            const rects = [];
+            for (const tn of textNodesOf(el)) {
+              const t = (tn.nodeValue || '').replace(/\s+/g, ' ').trim();
+              if (!t) continue;
+              chars += t.length;
+              spaces += (t.match(/ /g) || []).length;
+              latin += (t.match(/[A-Za-z]/g) || []).length;
+              const src = tn.parentElement || el;
+              bySource.set(src, (bySource.get(src) || 0) + t.length);
+              const range = document.createRange();
+              range.selectNodeContents(tn);
+              for (const r of range.getClientRects()) {
+                if (r.width > 0 && r.height > 0) rects.push(r);
+              }
+            }
+            if (chars > 0) {
+              // 글자 수가 가장 많은 요소의 스타일을 이 블록의 대표 스타일로 쓴다
+              let src = el, best = -1;
+              for (const [s, n] of bySource) if (n > best) { best = n; src = s; }
+              const scs = styleOf(src);
+              const fontSize = px(scs.fontSize);
+              const fontWeight = parseInt(scs.fontWeight, 10) || 400;
+              const monoPre = MONO.test(scs.fontFamily || '') && /^(pre|break-spaces)/.test(scs.whiteSpace || '');
+              const codeContext = monoPre || !!src.closest('pre, code, kbd, samp');
+              const hEl = src.closest('h1, h2, h3, h4, h5, h6, [role="heading"]');
+              let role = 'body';
+              if (hEl) {
+                const m = /^H([1-6])$/.exec(hEl.tagName.toUpperCase());
+                const lvl = m ? Number(m[1]) : (parseInt(hEl.getAttribute('aria-level'), 10) || 2);
+                role = 'h' + Math.min(6, Math.max(1, lvl));
+              }
+              const uiContext = !!src.closest(UI_SEL) || UI_CLASS.test(classChain(src, 3));
+              const finePrint = !!src.closest('[role="contentinfo"]') || FINE_CLASS.test(classChain(src, 4));
+              const skipAncestor = src.closest('sub, sup, code, kbd, samp, var, caption, figcaption, small');
+              text.push({
+                selector: cssPath(el),
+                tag: (skipAncestor || src).tagName.toLowerCase(),
+                chars, spaces, latin,
+                fontSize,
+                lineHeightPx: scs.lineHeight === 'normal' ? null : px(scs.lineHeight),
+                letterSpacingPx: scs.letterSpacing === 'normal' ? 0 : (px(scs.letterSpacing) || 0),
+                fontWeight,
+                textTransform: scs.textTransform || 'none',
+                textAlign: cs.textAlign || 'start',
+                hyphens: scs.hyphens || scs.getPropertyValue('-webkit-hyphens') || 'manual',
+                lineWidths: mergeLines(rects),
+                heading: !!hEl,
+                codeContext, uiContext, finePrint, monoPre,
+              });
+              // 위계 표본 — 제목은 전부, 본문은 UI·코드·고지를 뺀 20자 이상 블록만
+              if (fontSize && !codeContext && (hEl || (!uiContext && !finePrint && chars >= 20))) {
+                const key = `${role}|${Math.round(fontSize * 10) / 10}|${fontWeight}`;
+                scaleMap.set(key, (scaleMap.get(key) || 0) + 1);
+              }
+            }
+          }
+        }
+
+        // ── 그라디언트 텍스트 (DP-P001)
+        const clipText = cs.backgroundClip === 'text' || cs.getPropertyValue('-webkit-background-clip') === 'text';
+        if (clipText && /gradient\(/i.test(cs.backgroundImage || '') && (el.textContent || '').trim()) {
+          if (gradientText.length < caps.gradients) {
+            gradientText.push({ selector: cssPath(el), backgroundImage: String(cs.backgroundImage).slice(0, 300) });
+          } else {
+            capped.gradients = true;
+          }
+        }
+
+        // ── 테두리 (DP-P002·DP-P003 공용 원자료)
+        const sides = ['Top', 'Right', 'Bottom', 'Left'];
+        const widths = sides.map(s => {
+          const st = cs[`border${s}Style`];
+          return st === 'none' || st === 'hidden' ? 0 : (px(cs[`border${s}Width`]) || 0);
+        });
+        const colorsVisible = sides.map(s => alphaOf(cs[`border${s}Color`]) > 0.1);
+        const radiusOf = (v) => {
+          const first = String(v || '').split(/\s+/)[0];
+          if (first.endsWith('%')) return (parseFloat(first) / 100) * Math.min(rect.width, rect.height);
+          return px(first) || 0;
+        };
+        const radii = [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius]
+          .map(radiusOf);
+        const maxW = Math.max(...widths);
+        // 한 면만 두드러지는 테두리만 후보로 남긴다 — 균일한 테두리가 상한을 먹지 않게
+        if (maxW >= 2 && widths.filter(w => w > maxW / 2).length === 1) {
+          if (borders.length < caps.borders) {
+            const cls = typeof el.className === 'string' ? el.className : '';
+            const ariaCurrent = el.getAttribute('aria-current');
+            borders.push({
+              selector: cssPath(el),
+              tag: el.tagName.toLowerCase(),
+              width: Math.round(rect.width), height: Math.round(rect.height),
+              widths, colorsVisible, radii,
+              stateMarked: STATE_CLASS.test(cls) || (!!ariaCurrent && ariaCurrent !== 'false')
+                || el.getAttribute('aria-selected') === 'true',
+            });
+          } else {
+            capped.borders = true;
+          }
+        }
+
+        // ── 카드 후보 박스 (DP-P003) — 칠해진(테두리·그림자·배경 구분) 블록만
+        if (block && rect.width >= 80 && rect.height >= 48) {
+          const edgeSides = widths.filter((w, i) => w >= 1 && colorsVisible[i]).length;
+          const shadow = !!cs.boxShadow && cs.boxShadow !== 'none';
+          const fillDiffers = alphaOf(cs.backgroundColor) > 0.05 && cs.backgroundColor !== effectiveBg(el.parentElement);
+          if (edgeSides > 0 || shadow || fillDiffers) {
+            if (boxes.length < caps.boxes) {
+              let p = el.parentElement;
+              while (p && !boxIndex.has(p)) p = p.parentElement;
+              boxIndex.set(el, boxes.length);
+              boxes.push({
+                selector: cssPath(el),
+                tag: el.tagName.toLowerCase(),
+                ancestor: p ? boxIndex.get(p) : -1,
+                width: Math.round(rect.width), height: Math.round(rect.height),
+                edgeSides, shadow, fillDiffers,
+                radius: Math.max(...radii),
+                interactive: el.matches(INTERACTIVE),
+                popup: !!el.closest(POPUP),
+              });
+            } else {
+              capped.boxes = true;
+            }
+          }
+        }
+
+        // ── 모션 (DP-P004) — 실제로 전환·애니메이션이 걸린 요소의 이징만
+        if (String(cs.transitionDuration || '0s').split(',').some(v => parseFloat(v) > 0)) {
+          addDist(motionMap, cs.transitionTimingFunction, el);
+        }
+        if (cs.animationName && cs.animationName !== 'none') {
+          addDist(motionMap, cs.animationTimingFunction, el);
+          addDist(animMap, cs.animationName, el);
+        }
+      }
+
+      // 제목 순서 — 화면 낭독기 전용 제목도 구조에 포함된다(1px 클립이어도 센다)
+      const headings = [];
+      for (const h of document.querySelectorAll('h1, h2, h3, h4, h5, h6, [role="heading"]')) {
+        if (headings.length >= caps.headings) break;
+        const r = h.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        if (styleOf(h).visibility === 'hidden') continue;
+        const m = /^H([1-6])$/.exec(h.tagName.toUpperCase());
+        const level = m ? Number(m[1]) : (parseInt(h.getAttribute('aria-level'), 10) || 2);
+        headings.push({ level, selector: cssPath(h), inFooter: !!h.closest('footer, [role="contentinfo"]') });
+      }
+
+      const dist = (map) => Array.from(map.entries()).map(([value, v]) => ({ value, count: v.count, sample: v.sample }));
+      return {
+        readability: {
+          scanned,
+          capped: capped.elements || capped.text,
+          text,
+          headings,
+          typeScale: Array.from(scaleMap.entries()).map(([k, count]) => {
+            const [role, size, weight] = k.split('|');
+            return { role, size: Number(size), weight: Number(weight), count };
+          }),
+        },
+        patterns: {
+          scanned,
+          capped: capped.elements || capped.boxes || capped.borders || capped.gradients,
+          viewportWidth: window.innerWidth,
+          gradientText, borders, boxes,
+          motion: dist(motionMap),
+          animations: dist(animMap),
+        },
+      };
+    }, caps);
+  } catch (error) {
+    console.error(`Craft audit failed: ${error.message}`);
+    return null;
+  }
+}
+
 // 포커스 가시성 계측 예산 — Tab 순회는 페이지 상태를 건드리므로 상한을 둔다.
 const FOCUS_TRAVERSAL_MAX = 30;   // 최대 Tab 횟수
 const FOCUS_TRAVERSAL_MS = 5000;  // 페이지당 시간 상한
@@ -1222,9 +1570,21 @@ function saveHealthScore(healthScore, extras = {}, meta = {}) {
   return report;
 }
 
+// 면제 요약 — 적용된 면제는 한 줄씩, 무효 면제는 사유와 함께 경고한다(조용히 버리지 않는다).
+function printRuleWaivers(waivers) {
+  if (!waivers) return;
+  for (const w of waivers.applied || []) {
+    console.log(`  Waived: ${w.id} (x${w.count || 0}) by ${w.decision}`);
+  }
+  for (const bad of waivers.invalid || []) {
+    const rule = bad.entry && typeof bad.entry === 'object' && bad.entry.rule ? `${bad.entry.rule}: ` : '';
+    console.log(`  Invalid waiver ignored: ${rule}${bad.reason}`);
+  }
+}
+
 // 룰 위반 요약 출력 — 스킬(SKILL.md)이 이 목록을 그대로 우선순위 큐로 사용한다.
 // 심각도 순으로 이미 정렬된 summarizeRuleFailures 결과를 상위 12건만 보여준다.
-function printRuleFailures(ruleFailures, drift) {
+function printRuleFailures(ruleFailures, drift, waivers) {
   if (drift && drift.enabled) {
     console.log(`  Token drift: ${drift.totalViolations} violation(s), ${drift.newViolationCount} new (baseline ${drift.hasBaseline ? 'on' : 'off'})`);
     if (drift.measurement === 'incomplete') {
@@ -1232,8 +1592,11 @@ function printRuleFailures(ruleFailures, drift) {
       console.log(`    measurement: incomplete — 값 상한 도달: ${(drift.capped || []).join(', ')} (styleFit은 이 범주를 완전히 반영하지 못함)`);
     }
   } else {
-    console.log('  Token drift: skipped (no .design-polish/design-decisions.json)');
+    // 계약 파일이 있어도 tokens가 없으면(면제만 둔 계약 등) 여기로 온다 — 실제 사유를 보여준다.
+    const why = (drift && drift.reason) || 'no contract';
+    console.log(`  Token drift: skipped (${why} — .design-polish/design-decisions.json)`);
   }
+  printRuleWaivers(waivers);
   if (!ruleFailures || ruleFailures.length === 0) {
     console.log('  Rule failures: none');
     return;
@@ -1319,6 +1682,7 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
     let styleMetrics = null;
     let perfMetrics = null;
     let koreanMetrics = null;
+    let craftMetrics = null;
     let stateMetrics = null;
     const primaryRoute = routes[0];
 
@@ -1351,6 +1715,7 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
             styleMetrics = await collectStyleMetrics(page);
             perfMetrics = await collectPerfMetrics(page);
             koreanMetrics = await collectKoreanTypography(page);
+            craftMetrics = await collectCraftMetrics(page);
             if (options.wcag) {
               console.log('Running WCAG accessibility check (desktop)...');
               wcagReport = await runAccessibilityCheck(page, url);
@@ -1454,7 +1819,21 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
 
     const koreanLint = contractLib.lintKoreanTypography(koreanMetrics);
     const stateLint = contractLib.lintStateContract(stateMetrics);
-    const ruleFailures = contractLib.summarizeRuleFailures(drift, koreanLint, stateLint);
+    // 가독성·상투 패턴은 계약 없이 돈다. 계약의 ruleWaivers가 있으면 그 규칙만 면제로 옮긴다.
+    // 계약 파일이 없거나 깨지면 readDesignContract가 ruleWaivers를 싣지 않으므로 빈 면제로 본다.
+    const ruleWaivers = (contract && contract.ruleWaivers) || { waivers: [], invalid: [] };
+    const readabilityLint = contractLib.applyRuleWaivers(
+      craftLib.lintReadability(craftMetrics && craftMetrics.readability), ruleWaivers
+    );
+    const patternLint = contractLib.applyRuleWaivers(
+      craftLib.lintSlopPatterns(craftMetrics && craftMetrics.patterns), ruleWaivers
+    );
+    const ruleFailures = contractLib.summarizeRuleFailures(drift, koreanLint, stateLint, readabilityLint, patternLint);
+    const waiverReport = {
+      active: ruleWaivers.waivers,
+      invalid: ruleWaivers.invalid,
+      applied: [...(readabilityLint.waived || []), ...(patternLint.waived || [])],
+    };
 
     // 스코어 환산
     const consistency = scoreConsistency(styleMetrics, drift);
@@ -1481,6 +1860,9 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
       tokenDrift: drift,
       koreanTypography: koreanLint,
       stateContract: stateLint,
+      readability: readabilityLint,
+      slopPatterns: patternLint,
+      ruleWaivers: waiverReport,
       ruleFailures,
     }, {
       // 측정 모드/라우트를 이력에 태깅 → 재캡처(8단계) 시 동종 baseline만 비교
@@ -1493,7 +1875,7 @@ async function captureLocal(routes, options = { wcag: true, responsive: false })
       baseline: baselineReport,
     });
 
-    printRuleFailures(ruleFailures, drift);
+    printRuleFailures(ruleFailures, drift, waiverReport);
 
     return {
       results,
@@ -1851,6 +2233,8 @@ module.exports = {
   probeTimeout,
   PROBE_TIMEOUT_MAX,
   collectFocusVisibility,
+  collectCraftMetrics,
+  CRAFT_CAPS,
   CONTRACT_PENALTY,
   STYLE_FIT_MAX,
   scorePerformance,
@@ -1870,6 +2254,7 @@ module.exports = {
   printJsonResult,
   // 계약 린트는 design-contract.cjs의 순수 함수를 재노출 (테스트/게이트 소비 편의)
   contract: contractLib,
+  craft: craftLib,
 };
 
 if (require.main === module) {

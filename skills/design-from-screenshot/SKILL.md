@@ -2,7 +2,7 @@
 name: design-from-screenshot
 description: 스크린샷/이미지에서 UI 코드를 생성. Claude 비전으로 디자인 속성을 추출하고, 디자인 지식 DB(BM25)로 매칭하여 프레임워크별 코드 생성. 디자인 계약이 있으면 계약 토큰을 제약으로 사용.
 allowed-tools: Read, Write, Glob, Grep, Bash, Edit
-version: "2.7.0"
+version: "2.8.0"
 ---
 
 # Design from Screenshot
@@ -160,6 +160,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain all "<style-hint>"
 ```
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/component-checklist.md")
 Read("${CLAUDE_PLUGIN_ROOT}/knowledge/ux-rules.md")
+Read("${CLAUDE_PLUGIN_ROOT}/knowledge/craft-floor.md")
 ```
 
 **프레임워크별 가이드 (해당 시):**
@@ -177,6 +178,8 @@ Phase 1(시각 분석) + Phase 2(지식 매칭) 결과를 결합하여 코드를
 2. **지식 DB 기반 보강**: 이미지에서 명확하지 않은 부분은 매칭된 스타일/색상/타이포로 보완
 3. **프레임워크 관용구 준수**: 각 프레임워크의 Best Practice 따름
 4. **접근성 기본 내장**: component-checklist.md 기준 준수 (터치타겟 44px, 포커스링, ARIA 등)
+5. **상투 패턴을 보태지 않는다** (v2.8.0): `craft-floor.md` 2절 거부 목록(DP-F2xx)에 있는 패턴은 이미지에 없으면 넣지 않는다.
+   이미지에 있으면 재현이 우선이다. 고치지 말고 Phase 5 출력에 해당 ID를 참고로 적는다.
 
 #### 프레임워크별 출력 포맷
 
@@ -217,6 +220,11 @@ Phase 1(시각 분석) + Phase 2(지식 매칭) 결과를 결합하여 코드를
    - ARIA label 필요한 곳에 추가
    - 이미지에 alt 텍스트
    - 색상만으로 정보 전달하지 않음
+
+4. **장인 기준선 대조** (`craft-floor.md` 1·2절)
+   - 이미지에서 읽히지 않는 상태(hover·focus·disabled·error·empty)를 채웠는가 (DP-F106)
+   - 브라우저 기본 표면을 추출한 팔레트로 지정했는가 (DP-F107)
+   - 이미지에 없는 거부 목록 패턴을 보태지 않았는가 (DP-F2xx)
 
 ### Phase 5: Output
 

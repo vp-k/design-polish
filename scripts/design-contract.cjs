@@ -37,7 +37,26 @@ const RULES = {
   'DP-S001': { severity: 'HIGH', title: 'disabled 요소가 opacity만으로 표현 (cursor: not-allowed 없음)' },
   'DP-S002': { severity: 'CRITICAL', title: '인터랙티브 요소에 포커스 표시 없음 (WCAG 2.4.7)' },
   'DP-S003': { severity: 'MEDIUM', title: '클릭 가능 요소에 cursor: pointer 미설정' },
+  // v2.8.0 — 가독성(DP-R)과 AI 상투 패턴(DP-P). 판정은 craft-lint.cjs.
+  // 전부 MEDIUM/LOW다. Pivot 기준(blockingNewViolations = CRITICAL+HIGH)과 점수를 흔들지 않는다.
+  'DP-R001': { severity: 'MEDIUM', title: '본문 한 줄이 너무 길다 (85자 초과 줄이 2줄 이상)' },
+  'DP-R002': { severity: 'MEDIUM', title: '여러 줄 본문의 행간이 좁다 (line-height 1.3배 미만)' },
+  'DP-R003': { severity: 'LOW', title: '좁은 단에 하이픈 없는 양쪽 정렬' },
+  'DP-R004': { severity: 'LOW', title: '긴 본문 전체를 대문자로 변환 (80자 이상)' },
+  'DP-R005': { severity: 'LOW', title: '본문 자간이 넓다 (0.05em 초과)' },
+  'DP-R006': { severity: 'MEDIUM', title: '본문 글자가 12px 미만' },
+  'DP-R007': { severity: 'MEDIUM', title: '제목 단계를 건너뜀 (예: h2 다음 h4)' },
+  'DP-R008': { severity: 'MEDIUM', title: '타이포 위계가 평탄하다 (인접 단계 비율 1.25 미만)' },
+  'DP-P001': { severity: 'LOW', title: '그라디언트 텍스트 (background-clip: text)' },
+  'DP-P002': { severity: 'LOW', title: '둥근 박스 한쪽 면의 강조 줄무늬' },
+  'DP-P003': { severity: 'LOW', title: '카드 안에 카드' },
+  'DP-P004': { severity: 'LOW', title: '바운스·탄성 이징' },
 };
+
+// 계약의 ruleWaivers로 면제할 수 있는 규칙 — 취향의 영역인 가독성·상투 패턴만.
+// 토큰(DP-T)은 허용 목록 자체가 계약이고, 접근성·상태(DP-S)와 한국어(DP-K)는 결정으로 덮을 대상이 아니다.
+const WAIVABLE_RULE_PREFIXES = ['DP-R', 'DP-P'];
+const WAIVER_REASON_MIN_CHARS = 10;
 
 // 레지스트리 무결성 — 등록되지 않은 severity 문자열이 섞이면 정렬이 조용히 망가진다.
 for (const [id, r] of Object.entries(RULES)) {
@@ -171,10 +190,62 @@ function round2(n) {
 //     ...
 //   }
 // }
+// ruleWaivers: 계약이 상투 패턴·가독성 규칙을 의도적으로 쓰기로 결정했을 때의 면제 목록.
+//   [{ "rule": "DP-P001", "decision": "DD-030", "reason": "브랜드 헤드라인은 그라디언트 텍스트로 결정했다" }]
+// 규칙 ID 단위다. 면제는 결정(decisions[])을 인용해야 하고, 이유가 있어야 한다.
+// 이 섹션은 hashContract에 들어가지 않는다 — 면제를 추가해도 토큰 baseline이 재동결되지 않는다.
+function parseRuleWaivers(raw) {
+  const out = { waivers: [], invalid: [] };
+  if (!raw || typeof raw !== 'object' || raw.ruleWaivers == null) return out;
+  if (!Array.isArray(raw.ruleWaivers)) {
+    out.invalid.push({ entry: raw.ruleWaivers, reason: 'ruleWaivers is not an array' });
+    return out;
+  }
+  const declared = new Set((Array.isArray(raw.decisions) ? raw.decisions : []).map(d => d && d.id).filter(Boolean));
+  const seen = new Set();
+  for (const entry of raw.ruleWaivers) {
+    const rule = entry && typeof entry.rule === 'string' ? entry.rule.trim() : '';
+    const decision = entry && typeof entry.decision === 'string' ? entry.decision.trim() : '';
+    const why = entry && typeof entry.reason === 'string' ? entry.reason.trim() : '';
+    let problem = null;
+    if (!RULES[rule]) problem = `unknown rule: ${rule || '(empty)'}`;
+    else if (!WAIVABLE_RULE_PREFIXES.some(p => rule.startsWith(p))) problem = `not waivable: ${rule}`;
+    else if (!decision) problem = 'missing decision';
+    else if (!declared.has(decision)) problem = `undeclared decision: ${decision}`;
+    else if (Array.from(why.replace(/\s+/g, '')).length < WAIVER_REASON_MIN_CHARS) problem = 'reason too short';
+    else if (seen.has(rule)) problem = `duplicate waiver: ${rule}`;
+    if (problem) {
+      out.invalid.push({ entry, reason: problem });
+      continue;
+    }
+    seen.add(rule);
+    out.waivers.push({ rule, decision, reason: why });
+  }
+  return out;
+}
+
+// 린트 결과에서 면제된 규칙의 finding을 waived로 옮긴다. 원본은 바꾸지 않는다.
+// summarizeRuleFailures는 findings만 보므로 면제분은 집계·Pivot·리포트 큐에서 빠진다.
+function applyRuleWaivers(lint, ruleWaivers) {
+  if (!lint || !lint.enabled || !Array.isArray(lint.findings)) return lint;
+  const list = ruleWaivers && Array.isArray(ruleWaivers.waivers) ? ruleWaivers.waivers : [];
+  if (list.length === 0) return lint;
+  const byRule = new Map(list.map(w => [w.rule, w]));
+  const findings = [];
+  const waived = Array.isArray(lint.waived) ? lint.waived.slice() : [];
+  for (const f of lint.findings) {
+    const w = byRule.get(f.id);
+    if (!w) { findings.push(f); continue; }
+    waived.push({ id: f.id, severity: f.severity, title: f.title, count: f.count, decision: w.decision, reason: w.reason });
+  }
+  return { ...lint, findings, waived };
+}
+
 function parseDesignContract(raw) {
   if (!raw || typeof raw !== 'object') return { enabled: false, reason: 'not an object' };
+  const ruleWaivers = parseRuleWaivers(raw);
   const tokens = raw.tokens && typeof raw.tokens === 'object' ? raw.tokens : null;
-  if (!tokens) return { enabled: false, reason: 'no tokens section' };
+  if (!tokens) return { enabled: false, reason: 'no tokens section', ruleWaivers };
 
   const rootPx = Number.isFinite(raw.rootFontSizePx) ? raw.rootFontSizePx : 16;
   const normalized = {};
@@ -199,7 +270,7 @@ function parseDesignContract(raw) {
     categoryCount++;
   }
 
-  if (categoryCount === 0) return { enabled: false, reason: 'no usable token category' };
+  if (categoryCount === 0) return { enabled: false, reason: 'no usable token category', ruleWaivers };
 
   const decisions = Array.isArray(raw.decisions) ? raw.decisions : [];
   return {
@@ -209,6 +280,7 @@ function parseDesignContract(raw) {
     tokens: normalized,
     decisionCount: decisions.length,
     decisionIds: decisions.map(d => d && d.id).filter(Boolean),
+    ruleWaivers,
   };
 }
 
@@ -756,6 +828,9 @@ module.exports = {
   normalizeFontValue,
   normalizeShadowValue,
   normalizeTokenValue,
+  WAIVABLE_RULE_PREFIXES,
+  parseRuleWaivers,
+  applyRuleWaivers,
   parseDesignContract,
   readDesignContract,
   hashContract,

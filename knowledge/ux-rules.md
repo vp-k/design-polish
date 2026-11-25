@@ -62,11 +62,11 @@ ID는 append-only다 — 규칙을 폐기해도 번호를 재사용하지 않는
 | DP-U501 | Z-Index Scale | Define scale system (10, 20, 30, 50) | Arbitrary `z-index: 9999` | HIGH |
 | DP-U502 | Content Jump | Reserve space for async content (`aspect-ratio`) | Let images push layout around (CLS — Cumulative Layout Shift) | HIGH |
 | DP-U503 | Viewport Units | Use `dvh` or account for mobile browser chrome | `100vh` for full-screen mobile layouts | MEDIUM |
-| DP-U504 | Container Width | Limit text to 65-75 characters per line (`max-w-prose`) | Full viewport width paragraphs | MEDIUM |
+| DP-U504 | Container Width | Limit text to 65-75 characters per line (`max-w-prose`). 자동 계측: 85자 초과 줄은 DP-R001 | Full viewport width paragraphs | MEDIUM |
 | DP-U505 | Touch Targets | Minimum 44×44px touch targets | Tiny clickable areas (below 44×44px WCAG minimum) | HIGH |
 | DP-U506 | Touch Spacing | Minimum 8px gap between touch targets | Tightly packed clickable elements | MEDIUM |
 | DP-U507 | Mobile First | Start mobile styles, then add breakpoints (`md:`, `lg:`) | Desktop-first causing mobile issues | MEDIUM |
-| DP-U508 | Font Size | Minimum 16px body text on mobile | Tiny text on mobile (`text-xs` for body) | HIGH |
+| DP-U508 | Font Size | Minimum 16px body text on mobile. 자동 계측은 12px 미만(DP-R006)만 잡는다. 12–15px는 눈으로 본다 | Tiny text on mobile (`text-xs` for body) | HIGH |
 | DP-U509 | Viewport Meta | `width=device-width, initial-scale=1` | Missing viewport meta tag | HIGH |
 | DP-U510 | Horizontal Scroll | Ensure content fits viewport width | Content wider than viewport on mobile | HIGH |
 | DP-U511 | Image Scaling | `max-width: 100%` on images | Fixed width images overflow | MEDIUM |
@@ -78,7 +78,7 @@ ID는 append-only다 — 규칙을 폐기해도 번호를 재사용하지 않는
 | DP-U601 | Color Contrast | Minimum 4.5:1 ratio for normal text | Low contrast text (#999 on white = 2.8:1) | HIGH |
 | DP-U602 | Color-Only Info | Use icons + text in addition to color | Red/green only for error/success | HIGH |
 | DP-U603 | Alt Text | Descriptive alt text for meaningful images | Empty or missing alt attributes | HIGH |
-| DP-U604 | Heading Hierarchy | Sequential heading levels (h1→h2→h3) | Skip heading levels (h1→h4) | MEDIUM |
+| DP-U604 | Heading Hierarchy | Sequential heading levels (h1→h2→h3). 자동 계측: 단계 건너뜀 DP-R007, 평탄한 크기 위계 DP-R008 | Skip heading levels (h1→h4) | MEDIUM |
 | DP-U605 | ARIA Labels | `aria-label` for icon-only buttons | Icon buttons without labels | HIGH |
 | DP-U606 | Keyboard Nav | Tab order matches visual order | Keyboard traps or illogical tab order | HIGH |
 | DP-U607 | Form Labels | `<label>` with `for` attribute or wrapping input | Placeholder-only inputs | HIGH |

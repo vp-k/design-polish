@@ -2,7 +2,7 @@
 name: design-renewal
 description: 디자인 전면 리뉴얼. 디자인 시스템 교체 수준의 대규모 변경. 색상 팔레트/타이포그래피/컴포넌트/레이아웃 전면 교체. 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합. /design-renewal 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.7.0"
+version: "2.8.0"
 ---
 
 # 디자인 리뉴얼 스킬
@@ -11,7 +11,7 @@ version: "2.7.0"
 design-polish와 동일한 0~6단계 분석 인프라를 사용하되, 7단계 코드 적용 범위가 디자인 시스템 전체로 확대됩니다.
 
 ### 지식 기반 리소스
-- **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙 (마크다운 직접 Read)
+- **knowledge/**: 서비스 유형별 UI 규칙, 컴포넌트 체크리스트, UX 규칙, 장인 기준선 (마크다운 직접 Read)
 - **data/**: 디자인 스타일 / 색상 팔레트 / 타이포그래피 / 기술 스택 가이드 (JSON + BM25 검색).
   수록 건수는 데이터 파일이 단일 출처이므로 문서에 적지 않는다 —
   실제 값이 필요하면 `node ${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs --help`가 `data/*.json`에서 세어 출력한다.
@@ -82,7 +82,7 @@ Read("${CLAUDE_PLUGIN_ROOT}/skills/design-polish/SKILL.md")
 핵심 요약:
 - **0단계**: 프로젝트 분석, 서비스 유형 감지, 스크린샷 캡처
 - **1단계**: WCAG 접근성 체크 (axe-core)
-- **1.5단계**: 디자인 지식 로딩 (knowledge/ Read + search.cjs 검색)
+- **1.5단계**: 디자인 지식 로딩 (knowledge/ Read + search.cjs 검색). `craft-floor.md`를 함께 읽고 라우트별 표면 모드(Operate / Persuade / Experience)를 정한다
 - **2단계**: 레퍼런스 사이트 선택
 - **3단계**: 트렌드 검색 + 레퍼런스 캡처
 - **4단계**: Gap 분석 (시각 비교 + 지식 기반)
@@ -112,6 +112,11 @@ design-polish는 8단계 우선순위로 개별 개선안을 도출하지만, de
 | 컴포넌트 토큰 | border-radius, shadow, spacing scale | 스타일 방향에 맞춤 |
 | 레이아웃 | 그리드 시스템, 간격 체계, 최대 너비 | 트렌드 + UX 규칙 |
 | 다크/라이트 모드 | 양 모드 색상 매핑 | 팔레트 기반 자동 생성 |
+| 표면 모드 | 라우트별 Operate / Persuade / Experience | `craft-floor.md` 0절 |
+
+> **리뉴얼은 방향을 바꿔도 되는 유일한 스킬이다.** 그래도 `craft-floor.md` 2절 거부 목록(DP-F2xx)은 기본값으로 적용한다.
+> 새 방향이 그중 하나를 의도적으로 고른다면 그 선택을 결정(`DD-NNN`)으로 남긴다. 근거 없이 손이 간 것이면 다른 해법을 찾는다.
+> 라이트/다크는 카테고리가 아니라 사용 장면으로 고른다 (DP-F215).
 
 ### 색상 팔레트 설계
 
@@ -188,6 +193,9 @@ ls "${CLAUDE_PLUGIN_ROOT}/templates/DESIGN.md" "${CLAUDE_PLUGIN_ROOT}/templates/
    모르면 6단계 사용자 확인에서 묻는다.
 4. **두 파일을 동기화한다.** `design-decisions.json`의 `tokens[*].decision`은 DESIGN.md에 실재하는 ID여야 한다.
 5. **anti-goals를 적는다.** 무엇을 하지 않기로 했는지가 없으면 계약이 아니다.
+6. **의도한 규칙 위반은 면제로 남긴다** (v2.8.0). 새 방향이 가독성(DP-R)·상투 패턴(DP-P) 규칙을 일부러 어기면
+   (예: 브랜드 헤드라인의 그라디언트 텍스트) 그 결정을 `DD-NNN`으로 적고 `ruleWaivers`에 `{rule, decision, reason}`을 넣는다.
+   면제 조건은 `knowledge/failure-rules.md` "규칙 면제" 절. DP-T/K/S는 면제할 수 없다.
 
 `design-decisions.json`의 `tokens`에 넣은 값만 UI에 등장할 수 있고, 그 밖의 값은
 다음 회차부터 `DP-T00x` 위반으로 잡힌다. 그러니 **실제로 적용할 값만** 넣는다
@@ -477,6 +485,8 @@ design-polish SKILL.md의 Pre-delivery 체크리스트를 모두 포함하며, �
 - [ ] border-radius가 정의된 스케일만 사용
 - [ ] shadow가 정의된 스케일만 사용
 - [ ] spacing이 정의된 스케일만 사용
+- [ ] 브라우저 기본 표면을 새 팔레트로 지정 — 선택색·캐럿·포커스 링·밑줄 오프셋·표 숫자 (DP-F107)
+- [ ] 거부 목록(DP-F2xx) 항목이 결정(`DD-NNN`) 없이 들어가지 않음
 
 ### 시각 품질
 - [ ] 색상 대비 4.5:1 이상 (WCAG AA)
