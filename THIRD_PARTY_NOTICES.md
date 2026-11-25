@@ -9,6 +9,10 @@ that work's license.
 **Original license:** Apache License 2.0 (full text below)
 **Copyright:** 2025 Paul Bakaus
 
+The source ships a `NOTICE.md`. Its notices cover `ios.md` and `android.md`, the browser extension's fonts,
+and its consent rules. None of those parts were used here. Under Section 4(d), notices that do not pertain
+to the derivative work are not reproduced.
+
 | File | What was taken | Changes made in this plugin |
 |------|----------------|-----------------------------|
 | `knowledge/craft-floor.md` | Most of the file is a Korean translation of impeccable's reference files, item by item: §1 render checks and §2 refuse list from `reference/craft-floor.md` ("Verify", "Refuse"); §3 polish-as-refinement, §4 drift classification, §5 fix order and the first bullet of §6 from `reference/polish.md`; §7 cognitive-load checklist and its 0–1 / 2–3 / 4+ bands from `reference/critique-rubric.md`; §9 report sections from `reference/audit.md`. §0 surface modes and §8 adapt the mode notes and Nielsen use in `animate.md`, `colorize.md`, `delight.md` and `critique.md` | Translated into Korean; split into numbered rule IDs (`DP-F###`); added default-severity and auto-measurement columns; mapped rows to this plugin's automatic rules (`DP-R`/`DP-P`/`DP-S`/`DP-K`); added contract precedence, so a design decision overrides a refuse-list default; tied §3 to this plugin's Pivot and §4 to its contract-change proposal; wrote most of §6; dropped the 0–4 heuristic scores and the source's tool commands |
