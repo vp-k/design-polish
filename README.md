@@ -394,4 +394,5 @@ is new. Details and the license text are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY
 
 ## License
 
-MIT, except `knowledge/craft-floor.md`, which is Apache-2.0 (see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+MIT. See [LICENSE](LICENSE). The one exception is `knowledge/craft-floor.md`, which stays Apache-2.0 (see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
