@@ -134,8 +134,7 @@ baseline 잔여는 완만히(-0.1/건) 압박한다. 브라운필드에 계약�
 ## DP-R — 가독성 (계약 불필요, v2.8.0)
 
 렌더된 DOM의 텍스트 요소를 한 번 훑어 computed style과 실제 줄 배치(`Range.getClientRects`)를 잰다.
-판정은 `scripts/craft-lint.cjs`의 순수 함수다. 임계값은 [pbakaus/impeccable](https://github.com/pbakaus/impeccable)
-(Apache-2.0)의 탐지 규칙에서 가져왔고, 코드는 새로 썼다.
+판정은 `scripts/craft-lint.cjs`의 순수 함수다.
 
 **전부 MEDIUM/LOW이고 점수에 들어가지 않는다.** Pivot 기준(`blockingNewViolations` = CRITICAL+HIGH)도 흔들지 않는다.
 처음 도입하는 사이트에서 기존 문제가 한꺼번에 보이는 것은 정상이다. 리포트에서 우선순위를 낮게 다룬다.

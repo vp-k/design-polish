@@ -19,10 +19,8 @@ Combines built-in design knowledge base + visual comparison + WCAG accessibility
 
 ### Craft floor (v2.8.0)
 
-Adapted from [pbakaus/impeccable](https://github.com/pbakaus/impeccable) (Apache-2.0). The lint code is new and
-takes only thresholds from the source. Most of `knowledge/craft-floor.md` is a Korean translation of the source's
-reference lists, reworked into rule IDs with severities, so that file is distributed under Apache-2.0.
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for what was taken and what changed.
+Two report-only lints and a model-judged checklist. Since v2.8.2 `knowledge/craft-floor.md` is written in this
+project's own words and is MIT like the rest of the plugin.
 
 - **Readability lint (`DP-R001`–`R008`)** — line length over 85 characters, tight leading, justified narrow
   columns, long uppercase runs, wide tracking, body text under 12px, skipped heading levels, and a flat type
@@ -40,9 +38,9 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for what was taken and what
 - **Craft floor (`knowledge/craft-floor.md`, `DP-F###`)** — model-judged rows: a render check (`DP-F1xx`,
   including browser default surfaces such as `::selection` and `caret-color`), a refuse list of default
   patterns (`DP-F2xx`), and a cognitive-load checklist (`DP-F3xx`). Also: surface modes
-  (Operate / Persuade / Experience), "polish is refinement, not concealed redesign", drift classification
+  (Operate / Persuade / Experience), polish scope (keep the existing design direction; a wrong direction goes to Pivot), drift classification
   before fixing, and two new report sections ("recurring patterns", "what is working").
-- **Not adopted: a second score** — impeccable's 0–4 heuristic scores were left out. The Health Score already
+- **Not adopted: a second score** — per-heuristic 0–4 scores were left out. The Health Score already
   exists, and a model-assigned score drifts run to run and would pollute regression history. Nielsen's ten
   heuristics are kept as a review lens only.
 
@@ -168,7 +166,7 @@ plugins/design-polish/
 │   ├── craft.test.cjs            # readability + pattern lint, waivers, rule registry sync
 │   └── search.test.cjs           # tokenizer (incl. Korean) + BM25 determinism
 ├── package.json
-├── THIRD_PARTY_NOTICES.md        # impeccable attribution + Apache-2.0 text
+├── THIRD_PARTY_NOTICES.md        # ui-ux-pro-max-skill MIT notice + acknowledgements
 └── README.md
 ```
 
@@ -387,12 +385,8 @@ can tell "nothing was attempted" from "everything attempted passed".
 ## Data Sources
 
 Design knowledge is adapted from [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) (MIT License), converted from CSV/Python to JSON/Node.js for zero-dependency integration.
-
-The craft floor (`knowledge/craft-floor.md`) is adapted from [pbakaus/impeccable](https://github.com/pbakaus/impeccable)
-(Apache-2.0) and stays under that license. Some `DP-R`/`DP-P` thresholds come from the same source; the lint code
-is new. Details and the license text are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Its copyright notice and license text are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-MIT. See [LICENSE](LICENSE). The one exception is `knowledge/craft-floor.md`, which stays Apache-2.0 (see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+MIT. See [LICENSE](LICENSE). Third-party notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

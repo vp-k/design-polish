@@ -1,6 +1,6 @@
 {
   "name": "design-polish",
-  "version": "2.8.1",
+  "version": "2.8.2",
   "description": "Design intelligence-driven polishing with knowledge base, visual comparison, and WCAG accessibility checks for Claude Code",
   "private": true,
   "type": "commonjs",

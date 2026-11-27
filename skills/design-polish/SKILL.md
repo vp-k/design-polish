@@ -2,7 +2,7 @@
 name: design-polish
 description: 디자인 지식 기반 + 시각 비교 + WCAG 접근성 체크 통합 폴리싱. 서비스 유형별 UI 추론, 스타일/색상/타이포 BM25 검색, 트렌드 분석, Gap 분석, 8단계 우선순위 개선안 도출. /design-polish 명령으로 실행.
 allowed-tools: Read, Write, Glob, Grep, Bash, WebSearch, Edit
-version: "2.8.1"
+version: "2.8.2"
 ---
 
 # 디자인 폴리싱 스킬
@@ -582,8 +582,8 @@ stagnation.status == "stagnant" AND score < 80?   (insufficient면 이 분기를
 - 서비스 유형 적합성이 **"불일치"**
 - 스타일 매칭이 현재 디자인과 **근본적으로 다른 방향**을 제시
 
-> **폴리시는 다듬기이지 숨은 재설계가 아니다** (`craft-floor.md` 3절). 점수와 무관하게
-> 개념 자체가 틀렸다고 판단되면 Refine 안에서 몰래 바꾸지 않는다. 그 판단을 말하고 Pivot을 권고한다.
+> **Refine은 있는 디자인을 고치는 단계다** (`craft-floor.md` 3절). 점수와 무관하게
+> 방향 자체가 틀렸다고 판단되면 Refine 안에서 바꾸지 않는다. 그 판단을 말하고 Pivot을 권고한다.
 
 ---
 
@@ -819,7 +819,7 @@ P 단계는 카테고리 배치일 뿐이다. 심각도는 `ruleFailures[]` 값�
 - [원인 하나] — [분류: 토큰 누락 | 일회성 구현 | 개념 불일치 | 국소 결함] ([규칙 ID], [N곳])
 
 ## 잘 되고 있는 것
-- [유지·복제할 관행 2~3개 — 7단계에서 건드리지 않는다]
+- [잘 동작해서 이번에 손대지 않을 부분 2~3개 — 7단계에서 건드리지 않는다]
 
 ## 개선안 (우선순위)
 
@@ -898,7 +898,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/search.cjs" --domain stack --stack react "ac
 - 대규모 구조 변경 (리팩토링 수준)
 - 브레이킹 체인지
 - 6단계 "잘 되고 있는 것"에 적은 부분
-- 기존 시각 세계를 바꾸는 변경 — 다듬기를 넘어서면 Pivot으로 넘긴다 (`craft-floor.md` 3절)
+- 기존 디자인 방향을 바꾸는 변경 — 필요하면 Pivot으로 넘긴다 (`craft-floor.md` 3절)
 
 ### 적용 결과 출력
 

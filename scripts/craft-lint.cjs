@@ -4,8 +4,8 @@
 // 계측(page.evaluate)은 capture.cjs의 collectCraftMetrics, 판정은 이 파일의 순수 함수다.
 // puppeteer 없이 단위 테스트가 가능하고 결정론적이다.
 //
-// 임계값은 pbakaus/impeccable(Apache-2.0)의 탐지 규칙에서 가져왔다. 코드는 옮기지 않고 새로 썼다.
-// 원본은 훨씬 많은 예외 맥락을 다룬다. 여기서는 computed style로 판정 가능한 보수적 부분만 쓴다.
+// computed style만으로 판정할 수 있는 보수적인 경우만 잡는다.
+// 예외 맥락이 많은 판정은 모델 판단 규칙(knowledge/craft-floor.md)에 남긴다.
 //
 // 규칙 severity와 제목은 design-contract.cjs의 RULES가 단일 출처다.
 // 전부 MEDIUM/LOW이며 점수에 들어가지 않는 보고 전용 규칙이다.
