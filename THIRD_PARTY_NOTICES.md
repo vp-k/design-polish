@@ -39,5 +39,7 @@ SOFTWARE.
 ## Acknowledgements
 
 Some ideas and numeric thresholds behind the craft floor (`DP-F###`) and the readability and pattern lints
-(`DP-R###`, `DP-P###`) were informed by [pbakaus/impeccable](https://github.com/pbakaus/impeccable). No text or
-code from that project is included; the documents and the lint code in this plugin were written independently.
+(`DP-R###`, `DP-P###`) were informed by [pbakaus/impeccable](https://github.com/pbakaus/impeccable). The lint code
+is new. `knowledge/craft-floor.md` began in v2.8.0 as a translation of that project's reference lists and was
+rewritten in this project's own words in v2.8.2. It keeps the rule IDs and their order so that existing citations
+stay valid. No text or code from that project is included.
